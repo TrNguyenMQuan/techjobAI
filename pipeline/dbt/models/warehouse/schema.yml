@@ -1,0 +1,52 @@
+version: 2
+
+models:
+  - name: dim_company
+    columns:
+      - name: id
+        tests:
+          - unique
+          - not_null
+      - name: company_name
+        tests:
+          - not_null
+
+  - name: dim_location
+    columns:
+      - name: id
+        tests:
+          - unique
+          - not_null
+      - name: city_name
+        tests:
+          - not_null
+
+  - name: dim_skill
+    columns:
+      - name: id
+        tests:
+          - unique
+          - not_null
+      - name: skill_name
+        tests:
+          - unique
+          - not_null
+
+  - name: fact_job
+    columns:
+      - name: source_id
+        tests:
+          - unique
+          - not_null
+      - name: title
+        tests:
+          - not_null
+
+  - name: job_skill_bridge
+    columns:
+      - name: source_id
+        tests:
+          - not_null
+      - name: skill_id
+        tests:
+          - not_null

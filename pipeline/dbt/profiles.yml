@@ -1,0 +1,12 @@
+techjob_ai:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      port: 5432
+      user: "{{ env_var('POSTGRES_USER', 'techjob') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'techjob123') }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'techjob_ai') }}"
+      schema: warehouse
+      threads: 4
