@@ -51,7 +51,7 @@ def main():
     # Upload files
     uploaded = 0
     for file_path in RAW_DIR.iterdir():
-        if file_path.is_file():
+        if file_path.is_file() and file_path.suffix == ".parquet":
             # Medallion path: raw/vietnamworks/2026-05-17/jobs.parquet
             remote_path = f"raw/vietnamworks/{today_str}/{file_path.name}"
 

@@ -198,57 +198,60 @@ def main():
             is_processed = FALSE
     """)
 
-    with engine.begin() as conn:
-        for _, row in df.iterrows():
-            # Build full payload JSON
-            payload = {
-                "job_id": row.get("job_id"),
-                "company_id": row.get("company_id"),
-                "salary_min": int(row.get("salary_min", 0)),
-                "salary_max": int(row.get("salary_max", 0)),
-                "salary_currency": row.get("salary_currency"),
-                "is_salary_visible": row.get("is_salary_visible"),
-                "job_level": row.get("job_level"),
-                "job_level_vi": row.get("job_level_vi"),
-                "industry": row.get("industry"),
-                "type_working_id": row.get("type_working_id"),
-                "language": row.get("language"),
-                "created_on": row.get("created_on"),
-                "approved_on": row.get("approved_on"),
-                "online_on": row.get("online_on"),
-                "extracted_at": row.get("extracted_at"),
-            }
+    all_params = []
+    for _, row in df.iterrows():
+        # Build full payload JSON
+        payload = {
+            "job_id": row.get("job_id"),
+            "company_id": row.get("company_id"),
+            "salary_min": int(row.get("salary_min", 0)),
+            "salary_max": int(row.get("salary_max", 0)),
+            "salary_currency": row.get("salary_currency"),
+            "is_salary_visible": row.get("is_salary_visible"),
+            "job_level": row.get("job_level"),
+            "job_level_vi": row.get("job_level_vi"),
+            "industry": row.get("industry"),
+            "type_working_id": row.get("type_working_id"),
+            "language": row.get("language"),
+            "created_on": row.get("created_on"),
+            "approved_on": row.get("approved_on"),
+            "online_on": row.get("online_on"),
+            "extracted_at": row.get("extracted_at"),
+        }
 
-            # Map salary display to raw_salary
-            salary_text = row.get("salary_display", "")
-            if row.get("salary_min") and row.get("salary_max") and row["salary_min"] > 0:
-                salary_text = f"{row['salary_min']}-{row['salary_max']} {row.get('salary_currency', '')}"
-            elif row.get("salary_display"):
-                salary_text = row["salary_display"]
+        # Map salary display to raw_salary
+        salary_text = row.get("salary_display", "")
+        if row.get("salary_min") and row.get("salary_max") and row["salary_min"] > 0:
+            salary_text = f"{row['salary_min']}-{row['salary_max']} {row.get('salary_currency', '')}"
+        elif row.get("salary_display"):
+            salary_text = row["salary_display"]
 
-            params = {
-                "source_id": row["source_id"],
-                "raw_title": row["title"],
-                "raw_company_name": row["company_name"],
-                "raw_location": row.get("location_cities", ""),
-                "raw_salary": salary_text,
-                "raw_experience": row.get("job_level_vi", ""),
-                "raw_job_type": "",
-                "raw_work_mode": str(row.get("type_working_id", "")),
-                "raw_description": row.get("job_description", ""),
-                "raw_requirements": row.get("job_requirement", ""),
-                "raw_benefits": row.get("benefits", ""),
-                "raw_skills": row.get("skills", ""),
-                "raw_company_size": "",
-                "raw_logo_url": row.get("company_logo", ""),
-                "raw_source_url": row.get("source_url", ""),
-                "raw_posted_date": row.get("approved_on", ""),
-                "raw_deadline": row.get("expired_on", ""),
-                "raw_payload": json.dumps(payload, ensure_ascii=False, default=str),
-            }
+        params = {
+            "source_id": row["source_id"],
+            "raw_title": row["title"],
+            "raw_company_name": row["company_name"],
+            "raw_location": row.get("location_cities", ""),
+            "raw_salary": salary_text,
+            "raw_experience": row.get("job_level_vi", ""),
+            "raw_job_type": "",
+            "raw_work_mode": str(row.get("type_working_id", "")),
+            "raw_description": row.get("job_description", ""),
+            "raw_requirements": row.get("job_requirement", ""),
+            "raw_benefits": row.get("benefits", ""),
+            "raw_skills": row.get("skills", ""),
+            "raw_company_size": "",
+            "raw_logo_url": row.get("company_logo", ""),
+            "raw_source_url": row.get("source_url", ""),
+            "raw_posted_date": row.get("approved_on", ""),
+            "raw_deadline": row.get("expired_on", ""),
+            "raw_payload": json.dumps(payload, ensure_ascii=False, default=str),
+        }
+        all_params.append(params)
 
-            conn.execute(upsert_sql, params)
-            insert_count += 1
+    if all_params:
+        with engine.begin() as conn:
+            conn.execute(upsert_sql, all_params)
+        insert_count = len(all_params)
 
     print(f"\n{'=' * 60}")
     print(f"  DONE!")

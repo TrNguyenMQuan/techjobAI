@@ -100,7 +100,7 @@ services:
   airflow-worker:
     <<: *airflow-common
     container_name: techjob-airflow-worker
-    command: airflow celery worker
+    command: airflow celery worker -H worker
     environment:
       - AIRFLOW__CORE__EXECUTOR=CeleryExecutor
       - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
