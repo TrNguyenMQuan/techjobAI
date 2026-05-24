@@ -1,0 +1,11 @@
+# ─── Core ────────────────────────────────────────────────────
+pyspark==3.5.8          # Spark engine (kèm JVM binaries ~300MB)
+python-dotenv==1.0.1    # load .env vào os.environ
+
+# ─── HTTP crawl ──────────────────────────────────────────────
+httpx[http2]==0.27.0    # async HTTP client, hỗ trợ HTTP/2 (nhanh hơn requests cho concurrent)
+tenacity==8.5.0         # decorator retry với exponential backoff
+
+# ─── Dev / verify ────────────────────────────────────────────
+# duckdb==1.0.0 — removed: requires C compiler to build wheel on this machine
+#                 dùng Spark DataFrame.show() hoặc psql để verify data thay thế

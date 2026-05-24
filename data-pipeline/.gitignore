@@ -1,0 +1,54 @@
+# ─── Secrets (NEVER commit) ──────────────────────────────────
+# .env chứa DB passwords, API keys, cloud credentials
+# Pattern .env.* để cover .env.local, .env.production etc.
+.env
+.env.local
+.env.*.local
+
+# ─── Python ──────────────────────────────────────────────────
+# __pycache__ chứa bytecode .pyc — Python auto-regenerate
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/         # pytest cache
+.mypy_cache/           # mypy type-check cache
+.ruff_cache/           # ruff linter cache
+.coverage              # coverage report
+
+# ─── Virtual environment ─────────────────────────────────────
+# venv là deps đã cài → mỗi máy tự `pip install -r requirements.txt`
+# Commit venv = repo phình to + lock OS-specific binaries
+venv/
+.venv/
+env/
+
+# ─── Data + logs (local artifacts) ───────────────────────────
+# data/ sẽ chứa Parquet output của Milestone 1
+# Không commit data — code generate được lại
+data/
+logs/
+*.log
+
+# ─── Spark / Hadoop runtime files ────────────────────────────
+# Spark tự tạo các folder này khi chạy local
+spark-warehouse/
+metastore_db/
+derby.log
+
+# ─── dbt (Milestone 5) ───────────────────────────────────────
+# target/ là compiled SQL — generate được lại bằng `dbt compile`
+target/
+dbt_packages/
+
+# ─── IDE ─────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+
+# ─── OS ──────────────────────────────────────────────────────
+.DS_Store              # macOS metadata
+Thumbs.db              # Windows metadata
+
+# --- Claude
+docs/
