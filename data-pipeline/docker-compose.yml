@@ -1,0 +1,32 @@
+services:
+  minio:
+    image: quay.io/minio/minio:latest
+    ports:
+      - "9000:9000" #S3-compatible
+      - "9001:9001" #Web console
+    environment:
+      MINIO_ROOT_USER: admin         # Access Key ID
+      MINIO_ROOT_PASSWORD: admin123  # AWS Secret Access Key
+    volumes:
+      - minio_data:/data # persist data
+    command: server /data --console-address ":9001" # Open web UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 19s
+      timeout: 5s
+      retries: 5
+  minio-setup: #use to create bucket bronze + silver
+    image: quay.io/minio/mc:latest
+    container_name: techjobai_minio_setup
+    depends_on:
+      minio:
+        condition: service_healthy # wait MinIO
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 admin admin123 &&
+      mc mb --ignore-existing local/bronze &&
+      mc mb --ignore-existing local/silver &&
+      echo 'Buckets ready: bronze, silver'
+      "
+volumes:
+  minio_data: # Docker control this volume use to persist

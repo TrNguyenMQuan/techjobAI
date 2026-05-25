@@ -1,4 +1,3 @@
-from pathlib import Path
 from pyspark.sql.functions import col, explode, to_timestamp, when
 from pyspark.sql.types import(
     ArrayType,
@@ -9,6 +8,7 @@ from pyspark.sql.types import(
     StructType
 )
 from source.spark_session import get_spark_session
+from source.storage import bronze_path, silver_path
 
 def page_schema():
     job_schema = StructType([
@@ -58,9 +58,10 @@ def page_schema():
         StructField("data", ArrayType(job_schema), True),
     ]) #meta + [{job1, job2, ...}]
 
-def run(date_str: str, raw_dir: Path, staging_dir: Path):
+def run(date_str: str):
     spark = get_spark_session("silver")
-    input_path = str(raw_dir / f"dt={date_str}")
+    input_path = bronze_path(date_str) # "s3a://bronze/jobs/dt=..."
+    out_path = silver_path(date_str) # "s3a://silver/jobs/dt=..."
 
     #Each file is one row have two column is meta + data[]
     pages_df = spark.read.schema(page_schema()).option("multiLine", "true").json(input_path)
@@ -83,12 +84,10 @@ def run(date_str: str, raw_dir: Path, staging_dir: Path):
     )
 
     print(f"Total jobs: {jobs_df.count()}")
-    jobs_df.printSchema()
-    out_path = str(staging_dir / f"dt={date_str}")
 
     # mode("overwrite"): nếu chạy lại cùng ngày thì ghi đè — idempotent.
     jobs_df.write.mode("overwrite").parquet(out_path)
 
-    print(f"Staging Parquet written to {out_path}")
+    print(f"Silver Parquet written to {out_path}")
     spark.stop()
 
