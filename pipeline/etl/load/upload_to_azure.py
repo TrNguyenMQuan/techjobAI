@@ -65,7 +65,7 @@ def main():
                 file_client.upload_data(file_data, overwrite=True)
 
             size_kb = file_path.stat().st_size / 1024
-            print(f"  ✅ Uploaded: {remote_path} ({size_kb:.1f} KB)")
+            print(f"Uploaded: {remote_path} ({size_kb:.1f} KB)")
             uploaded += 1
 
     print(f"\n{'=' * 60}")

@@ -45,6 +45,11 @@ with DAG(
         bash_command=f"cd {PROJECT_DIR} && {PYTHON} {ETL_DIR}/extract/extract_vietnamworks.py",
     )
 
+    upload_azure = BashOperator(
+        task_id="upload_to_azure",
+        bash_command=f"cd {PROJECT_DIR} && {PYTHON} {ETL_DIR}/load/upload_to_azure.py",
+    )
+
     # Task 2: Load Parquet from Azure Data Lake Gen2, clean and load to Postgres (Silver layer)
     load_to_staging = BashOperator(
         task_id="load_to_staging",
@@ -70,4 +75,4 @@ with DAG(
     )
 
     # DAG Dependency Flow
-    extract >> load_to_staging >> dbt_run >> dbt_test >> run_embedding
+    extract >> upload_azure >> load_to_staging >> dbt_run >> dbt_test >> run_embedding
