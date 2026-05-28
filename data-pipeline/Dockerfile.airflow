@@ -1,0 +1,28 @@
+FROM apache/airflow:2.10.0
+
+# ── Install Java (PySpark requires JVM to run Spark engine) ─────────────────
+USER root
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        openjdk-17-jdk-headless \
+        libpq-dev \
+        gcc \
+        python3-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create arch-agnostic symlink: works on both amd64 (Intel) and arm64 (Apple Silicon)
+# ls -d finds the actual installed path (e.g. java-17-openjdk-arm64 or amd64)
+RUN ln -sf "$(ls -d /usr/lib/jvm/java-17-openjdk-*/)" /usr/lib/jvm/java-17-openjdk
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# ── Install project dependencies ─────────────────────────────────────────────
+# Switch back to airflow user before pip — never pip install as root
+USER airflow
+
+COPY requirements.txt /requirements.txt
+
+RUN pip install --no-cache-dir -r /requirements.txt

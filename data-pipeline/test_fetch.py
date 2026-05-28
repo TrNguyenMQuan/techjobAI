@@ -1,6 +1,6 @@
 import asyncio
 from pathlib import Path
-from source.bronze import VietnamWorksClient
+from source.vietnamworks_client import VietnamWorksClient
 
 async def main():
     client = VietnamWorksClient(semaphore_limit=5)  # conservative khi test

@@ -1,0 +1,16 @@
+# dbt_vietnamworks/profiles.yml
+# Đặt trong project directory để mount vào Docker cùng với models
+# env_var() đọc từ environment — local dùng .env, Docker dùng docker-compose env
+
+dbt_vietnamworks:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"       # Docker: host.docker.internal
+      port: "{{ env_var('POSTGRES_PORT', '5432') | int }}"
+      dbname: "{{ env_var('POSTGRES_DB', 'techjob_ai') }}"
+      user: "{{ env_var('POSTGRES_USER') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD') }}"
+      schema: warehouse
+      threads: 4

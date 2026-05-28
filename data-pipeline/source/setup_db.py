@@ -36,6 +36,8 @@ def setup():
             working_locations JSONB,
             benefits          JSONB,
             job_functions_v3  JSONB,
+            job_description   TEXT,
+            job_requirement   TEXT,
             ingested_at       TIMESTAMP DEFAULT NOW()
         );
     """)

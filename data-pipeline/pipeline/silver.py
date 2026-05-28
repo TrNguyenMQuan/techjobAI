@@ -47,6 +47,9 @@ def page_schema():
             StructField("jobFunctionV3Name",   StringType(),  True),
             StructField("jobFunctionV3NameVI", StringType(),  True),
         ]), True),
+        StructField("jobDescription", StringType(), True),
+        StructField("jobRequirement",  StringType(), True),
+
     ])
 
     return StructType([
@@ -83,7 +86,11 @@ def run(date_str: str):
         .withColumn("approvedOn", to_timestamp(col("approvedOn")))
     )
 
-    print(f"Total jobs: {jobs_df.count()}")
+    # Bronze giữ nguyên raw (kể cả duplicate), Silver mới là layer đã cleaned.
+    before = jobs_df.count()
+    jobs_df = jobs_df.dropDuplicates(["jobId"])
+    after = jobs_df.count()
+    print(f"Total jobs: {before} raw → {after} unique (dropped {before - after} duplicates)")
 
     # mode("overwrite"): nếu chạy lại cùng ngày thì ghi đè — idempotent.
     jobs_df.write.mode("overwrite").parquet(out_path)

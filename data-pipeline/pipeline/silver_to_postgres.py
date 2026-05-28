@@ -41,6 +41,8 @@ def run(date_str: str):
         .withColumnRenamed("createdOn",        "created_on")
         .withColumnRenamed("expiredOn",        "expired_on")
         .withColumnRenamed("approvedOn",       "approved_on")
+        .withColumnRenamed("jobDescription", "job_description")
+        .withColumnRenamed("jobRequirement",  "job_requirement")
         # to_json: ArrayType/StructType to JSON string to save in PostgreSQL JSONB
         .withColumn("skills",            to_json(col("skills")))
         .withColumn("working_locations", to_json(col("workingLocations")))

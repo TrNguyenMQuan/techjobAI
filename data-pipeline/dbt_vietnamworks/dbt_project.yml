@@ -1,0 +1,25 @@
+name: 'dbt_vietnamworks'
+version: '1.0.0'
+profile: 'dbt_vietnamworks'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  dbt_vietnamworks:
+    staging:
+      +materialized: view      # staging = view, luôn query live từ silver.jobs
+      +schema: staging         # tạo trong schema "staging" (không phải "warehouse")
+    warehouse:
+      +materialized: table     # mặc định warehouse = table (dim_company, dim_skill)
+      +schema: warehouse       # tạo trong schema "warehouse"
+      fact_job_postings:
+        +materialized: incremental  # override: fact table chỉ append rows mới
