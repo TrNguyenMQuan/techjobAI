@@ -20,7 +20,7 @@ dbt-postgres==1.8.0
 
 # ─── ML / Embedding ──────────────────────────────────────────
 sentence-transformers==3.0.1
-sqlalchemy>=2.0.0
+sqlalchemy>=1.4.0,<2.0.0
 psycopg2-binary>=2.9.0
 
 # ─── Web Backend ─────────────────────────────────────────────

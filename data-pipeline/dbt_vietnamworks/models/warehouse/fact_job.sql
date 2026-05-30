@@ -41,8 +41,8 @@ salary_converted AS (
         -- Convert to VND/tháng
         CASE
             WHEN salary_min IS NULL OR salary_min = 0 THEN NULL
-            WHEN real_currency = 'USD' AND is_yearly THEN (salary_min * 26300) / 12
-            WHEN real_currency = 'USD' THEN salary_min * 26300
+            WHEN real_currency = 'USD' AND is_yearly THEN (salary_min::bigint * 26300) / 12
+            WHEN real_currency = 'USD' THEN salary_min::bigint * 26300
             WHEN is_yearly THEN salary_min / 12
             -- VND > 100 triệu -> likely yearly -> divide by 12
             WHEN real_currency = 'VND' AND salary_min > 100000000 THEN salary_min / 12
@@ -51,8 +51,8 @@ salary_converted AS (
 
         CASE
             WHEN salary_max IS NULL OR salary_max = 0 THEN NULL
-            WHEN real_currency = 'USD' AND is_yearly THEN (salary_max * 26300) / 12
-            WHEN real_currency = 'USD' THEN salary_max * 26300
+            WHEN real_currency = 'USD' AND is_yearly THEN (salary_max::bigint * 26300) / 12
+            WHEN real_currency = 'USD' THEN salary_max::bigint * 26300
             WHEN is_yearly THEN salary_max / 12
             WHEN real_currency = 'VND' AND salary_max > 100000000 THEN salary_max / 12
             ELSE salary_max
@@ -111,7 +111,8 @@ final AS (
         job_url AS source_url,
         created_on AS posted_date,
         expired_on AS deadline,
-        ingested_at AS extracted_at
+        ingested_at AS extracted_at,
+        CAST(NULL AS vector(384)) AS embedding
     FROM salary_converted
 )
 

@@ -6,15 +6,13 @@ x-airflow-common:
     dockerfile: Dockerfile.airflow
   environment:
     &airflow-common-env
-    # Dùng CeleryExecutor: scheduler giao task cho worker qua Redis
-    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    # Dùng LocalExecutor: chạy trực tiếp trong container scheduler, không cần worker
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres-airflow/airflow
-    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
-    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres-airflow/airflow
     AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
     AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
     AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
-    # Cho phép worker import từ source/ và pipeline/
+    # Cho phép scheduler import từ source/ và pipeline/
     PYTHONPATH: /opt/airflow
 
     # MinIO — bên trong Docker dùng tên service, không phải localhost
@@ -40,8 +38,6 @@ x-airflow-common:
     postgres-airflow:
       condition: service_healthy
     postgres-project:
-      condition: service_healthy
-    redis:
       condition: service_healthy
 
 services:
@@ -94,16 +90,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    image: redis:7
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # ── Airflow Services ─────────────────────────────────────────────────────────
   airflow-init:
     <<: *airflow-common
@@ -137,13 +123,6 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  airflow-worker:
-    <<: *airflow-common
-    command: celery worker
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-
   # ── Project Database (with pgvector) ────────────────────────────────────────
   postgres-project:
     image: pgvector/pgvector:pg15
@@ -168,7 +147,8 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: techjob-backend
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    entrypoint: ["/usr/bin/dumb-init", "--", "/home/airflow/.local/bin/uvicorn"]
+    command: app.main:app --host 0.0.0.0 --port 8000 --reload
     ports:
       - "8000:8000"
     environment:
@@ -181,6 +161,7 @@ services:
     volumes:
       - ./app:/opt/airflow/app
       - ./pipeline:/opt/airflow/pipeline
+      - ./source:/opt/airflow/source
       - ./.env:/opt/airflow/.env
     depends_on:
       postgres-project:
