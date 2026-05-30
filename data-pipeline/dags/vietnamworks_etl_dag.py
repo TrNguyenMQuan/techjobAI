@@ -5,6 +5,7 @@ from airflow.operators.bash import BashOperator
 from pipeline.bronze import run as bronze_run
 from pipeline.silver import run as silver_run
 from pipeline.silver_to_postgres import run as silver_to_posgre_run
+from pipeline.embedding import run as embedding_run
 
 default_args = {
     "owner" : "techjobai",
@@ -41,12 +42,17 @@ with DAG(
 
     dbt_run = BashOperator(
         task_id="dbt_run",
-        bash_command="cd /opt/airflow/dbt_vietnamworks && /home/airflow/.local/bin/dbt run --profiles-dir . --select staging warehouse",
+        bash_command="cd /opt/airflow/dbt_vietnamworks && /home/airflow/.local/bin/dbt run --profiles-dir .",
     )
 
     dbt_test = BashOperator(
         task_id="dbt_test",
-        bash_command="cd /opt/airflow/dbt_vietnamworks && /home/airflow/.local/bin/dbt test --profiles-dir . --select staging warehouse",
+        bash_command="cd /opt/airflow/dbt_vietnamworks && /home/airflow/.local/bin/dbt test --profiles-dir .",
     )
 
-    ingest_to_bronze >> extract_to_silver >> silver_to_postgres >> dbt_run >> dbt_test
+    generate_embeddings = PythonOperator(
+        task_id="generate_embeddings",
+        python_callable=embedding_run,
+    )
+
+    ingest_to_bronze >> extract_to_silver >> silver_to_postgres >> dbt_run >> dbt_test >> generate_embeddings

@@ -9,14 +9,15 @@ def get_conn():
         host=os.getenv("POSTGRES_HOST", "localhost"),
         port=int(os.getenv("POSTGRES_PORT", 5432)),
         dbname=os.getenv("POSTGRES_DB", "techjob_ai"),
-        user=os.getenv("POSTGRES_USER", "postgres"),
-        password=os.getenv("POSTGRES_PASSWORD", ""),
+        user=os.getenv("POSTGRES_USER", "techjob"),
+        password=os.getenv("POSTGRES_PASSWORD", "techjob123"),
     )
 
 def setup():
     conn = get_conn()
     cur = conn.cursor()
 
+    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
     cur.execute("CREATE SCHEMA IF NOT EXISTS silver;")
     cur.execute("""
         CREATE TABLE IF NOT EXISTS silver.jobs (
@@ -27,6 +28,12 @@ def setup():
             salary_min        INTEGER,
             salary_max        INTEGER,
             is_salary_visible BOOLEAN,
+            pretty_salary     TEXT,
+            salary_currency   TEXT,
+            company_logo      TEXT,
+            job_url           TEXT,
+            job_level         TEXT,
+            job_level_vi      TEXT,
             job_level_id      INTEGER,
             type_working_id   INTEGER,
             created_on        TIMESTAMP,

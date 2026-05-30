@@ -22,13 +22,12 @@ x-airflow-common:
     MINIO_ACCESS_KEY: admin
     MINIO_SECRET_KEY: admin123
 
-    # Project Postgres — chạy trên host Mac, không phải trong Docker
-    # host.docker.internal là DNS đặc biệt của Do cker Desktop trỏ về máy host
-    POSTGRES_HOST: host.docker.internal
+    # Project Postgres — chạy trong Docker container
+    POSTGRES_HOST: postgres-project
     POSTGRES_PORT: 5432
-    POSTGRES_DB: ${POSTGRES_DB}
-    POSTGRES_USER: ${POSTGRES_USER}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGRES_DB: ${POSTGRES_DB:-techjob_ai}
+    POSTGRES_USER: ${POSTGRES_USER:-techjob}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techjob123}
 
   volumes:
     - ./dags:/opt/airflow/dags          # DAG files
@@ -37,12 +36,10 @@ x-airflow-common:
     - ./dbt_vietnamworks:/opt/airflow/dbt_vietnamworks   # dbt
     - airflow_logs:/opt/airflow/logs
 
-  # host.docker.internal hoạt động trên Mac tự động, dòng này đảm bảo tương thích Linux
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
-
   depends_on:
     postgres-airflow:
+      condition: service_healthy
+    postgres-project:
       condition: service_healthy
     redis:
       condition: service_healthy
@@ -147,7 +144,50 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # ── Project Database (with pgvector) ────────────────────────────────────────
+  postgres-project:
+    image: pgvector/pgvector:pg15
+    container_name: techjob-postgres-project
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-techjob}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techjob123}
+      POSTGRES_DB: ${POSTGRES_DB:-techjob_ai}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_project_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-techjob} -d $${POSTGRES_DB:-techjob_ai}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Project Backend (FastAPI API) ───────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
+    container_name: techjob-backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "8000:8000"
+    environment:
+      POSTGRES_HOST: postgres-project
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-techjob_ai}
+      POSTGRES_USER: ${POSTGRES_USER:-techjob}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-techjob123}
+      PYTHONPATH: /opt/airflow
+    volumes:
+      - ./app:/opt/airflow/app
+      - ./pipeline:/opt/airflow/pipeline
+      - ./.env:/opt/airflow/.env
+    depends_on:
+      postgres-project:
+        condition: service_healthy
+
 volumes:
   minio_data:
   postgres_airflow_data:
+  postgres_project_data:
   airflow_logs:

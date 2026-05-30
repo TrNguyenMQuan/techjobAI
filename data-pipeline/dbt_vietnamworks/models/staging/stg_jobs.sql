@@ -16,11 +16,21 @@ renamed as (
 
         -- Company
         company_name,
+        company_logo,
 
         -- Salary
         salary_min,
         salary_max,
         is_salary_visible,
+        pretty_salary,
+        salary_currency,
+
+        -- Job level text
+        job_level,
+        job_level_vi,
+
+        -- URL
+        job_url,
 
         -- Timestamp
         created_on,

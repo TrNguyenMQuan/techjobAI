@@ -20,7 +20,9 @@ IT_CATEGORY_FILTER = [
 RETRIEVE_FIELDS = [
     "jobId", "jobTitle", "companyName", "companyId",
     "salaryMin", "salaryMax", "isSalaryVisible",
-    "jobLevelId", "typeWorkingId",
+    "prettySalary", "salaryCurrency",
+    "companyLogo", "jobUrl",
+    "jobLevel", "jobLevelVI", "jobLevelId", "typeWorkingId",
     "createdOn", "expiredOn", "approvedOn",
     "skills", "workingLocations", "benefits",
     "jobDescription", "jobRequirement",       # plain-text / HTML — LLM RAG input

@@ -1,101 +1,134 @@
-# data-pipeline — VietnamWorks ETL
+# data-pipeline — VietnamWorks ETL & API Search Backend
 
-End-to-end pipeline thu thập + chuẩn hoá dữ liệu tuyển dụng IT Việt Nam từ **VietnamWorks public API**, theo kiến trúc **Medallion** (Raw → Staging → Warehouse).
+Hệ thống end-to-end thu thập, xử lý, lưu trữ, phân tích và tìm kiếm ngữ nghĩa dữ liệu tuyển dụng IT tại Việt Nam từ **VietnamWorks public API**.
 
-> Phần Data Engineering của dự án [techjobAI](../README.md). Application (FastAPI + LLM + MCP) ở folder khác sau khi pipeline xong.
+Hệ thống sử dụng kiến trúc **Medallion** phối hợp giữa **PySpark** (cho extraction/loading thô) và **dbt** (cho modeling/data warehouse).
 
 ---
 
-## Quick start (chỉ áp dụng sau khi xong các milestones)
+## 🏗️ Kiến trúc Hệ thống
 
-```bash
-cd data-pipeline
-cp .env.example .env       # điền credentials
-docker compose up -d       # khởi động Postgres + MinIO + Airflow + Redis
-open http://localhost:8080 # Airflow UI (admin/admin)
-open http://localhost:9001 # MinIO console
-source venv/bin/activate
+### 1. Luồng dữ liệu (Data Pipeline Flow)
+
+```
+[VietnamWorks API]
+      │ (API Request - Async HTTPX client)
+      ▼
+[Bronze Storage (MinIO S3)]  <-- Lưu file JSON gốc phân trang
+      │
+      │ (PySpark Silver - Đọc JSON, làm sạch, loại trùng)
+      ▼
+[Silver Storage (MinIO S3)]  <-- Lưu Parquet format
+      │
+      │ (PySpark Postgres Writer)
+      ▼
+[PostgreSQL - silver.jobs]   <-- Bảng trung chuyển trung gian
+      │
+      │ (dbt Run)
+      ├───────────────────────┬────────────────────────┐
+      ▼                       ▼                        ▼
+[dim_company, dim_skill,  [fact_job]            [job_skill_bridge]
+  dim_location]               │ (Salary Normalize,     (N-N bridge)
+                              │  HTML Strip)
+                              ▼
+                        [fact_job (Postgres)]
+                              │
+                              │ (Airflow Task: ML Embedding Service)
+                              ▼
+                        [fact_job.embedding]  <-- pgvector (384-dim, HNSW index)
+                              │
+                              │ (dbt aggregates)
+                              ▼
+                        [Dashboard Cache & Aggregates]
 ```
 
+### 2. Các lớp lưu trữ (Medallion Architecture)
+
+| Layer | Công nghệ | Dữ liệu & Định dạng | Mục đích |
+|---|---|---|---|
+| **Bronze** | MinIO (S3) | JSON, partition `jobs/dt=YYYY-MM-DD/` | Lưu trữ dữ liệu gốc thô từ API để lưu vết và có thể chạy lại khi cần. |
+| **Silver (MinIO)** | MinIO (S3) | Parquet, partition `jobs/dt=YYYY-MM-DD/` | Dữ liệu dạng bảng sạch sẽ, loại bỏ trùng lặp `jobId`. |
+| **Silver (Postgres)** | PostgreSQL | Bảng `silver.jobs` | Bảng lưu trữ trung gian để dbt đọc dữ liệu thô sạch. |
+| **Gold (Warehouse)** | PostgreSQL | Bảng `warehouse_warehouse.fact_job` và các `dim_*` | Dữ liệu đã chuẩn hóa, làm sạch nội dung text (bỏ HTML tags), phân tách đa chiều. |
+| **Gold (Aggregates)** | PostgreSQL | Các bảng `agg_*` và `dashboard_cache` | Tổng hợp dữ liệu pre-computed cho API Dashboard. |
+
 ---
 
-## Cấu trúc thư mục (target — sẽ hình thành dần qua các milestones)
+## 📁 Cấu trúc Thư mục
 
 ```
 data-pipeline/
-├── .env.example                # template biến môi trường
-├── .gitignore                  # loại trừ .env, __pycache__, data/, logs/
-├── requirements.txt            # python deps (pyspark, requests, dotenv, ...)
-├── docker-compose.yml          # Postgres + MinIO + Airflow + Redis
-├── Dockerfile.airflow          # custom Airflow image (cài pyspark + dbt)
+├── .env.example                # File mẫu cấu hình biến môi trường
+├── requirements.txt            # Quản lý python dependencies (PySpark, FastAPI, etc.)
+├── docker-compose.yml          # Containerize: Airflow, Redis, MinIO, Postgres (pgvector)
+├── Dockerfile.airflow          # Custom Airflow Image (cài đặt Java, PySpark, dbt)
 │
-├── dags/                       # Airflow DAGs
+├── dags/                       # Airflow DAG định nghĩa lịch trình chạy hàng ngày
 │   └── vietnamworks_etl_dag.py
 │
-├── pipeline/                   # PySpark jobs (1 file = 1 transformation)
-│   ├── extract_to_raw.py       # API → MinIO (Bronze, Parquet, partition dt=)
-│   └── raw_to_staging.py       # MinIO Raw → Postgres staging (Silver)
+├── pipeline/                   # Scripts thực thi các bước ETL
+│   ├── bronze.py               # Thu thập dữ liệu API -> Bronze JSON (MinIO)
+│   ├── silver.py               # Bronze JSON -> Silver Parquet (MinIO)
+│   ├── silver_to_postgres.py   # Silver Parquet -> Postgres (silver.jobs)
+│   └── embedding.py            # Tạo vector embedding bằng SentenceTransformer
 │
-├── source/                     # shared utilities (DRY)
-│   ├── api_client.py           # VietnamWorks API client (pagination + retry)
-│   ├── spark_session.py        # factory build SparkSession
-│   ├── storage.py              # abstraction MinIO ↔ ADLS Gen2
-│   ├── setup_db.py             # DDL idempotent
-│   └── logger.py               # structured logging (structlog)
+├── source/                     # Module Python tái sử dụng cho các scripts
+│   ├── vietnamworks_client.py  # HTTP client kết nối API
+│   ├── spark_session.py        # Cấu hình Spark Session
+│   ├── storage.py              # Kết nối S3 / ADLS Gen2
+│   └── setup_db.py             # Setup DDL database (pgvector, silver.jobs)
 │
-├── dbt_vietnamworks/           # dbt project (Silver → Gold)
+├── dbt_vietnamworks/           # Project dbt (Transform & Data Quality Tests)
 │   ├── dbt_project.yml
 │   ├── profiles.yml
 │   └── models/
-│       ├── staging/            # 1-1 mirror với staging.jobs
-│       │   ├── stg_jobs.sql
-│       │   ├── _sources.yml
-│       │   └── _schema.yml
-│       └── warehouse/          # fact + dim tables (star schema)
-│           ├── dim_company.sql
-│           ├── dim_skill.sql
-│           └── fact_job_postings.sql
+│       ├── staging/            # Ánh xạ 1-1 từ silver.jobs
+│       └── warehouse/          # Fact & Dimensions (Fact Job, Dim Skill, Dim Company, Dim Location)
+│       └── aggregates/         # Tổng hợp dữ liệu pre-computed phục vụ Dashboard
 │
-├── tests/                      # pytest unit + integration tests
-│   ├── conftest.py
-│   ├── test_api_client.py
-│   └── test_transforms.py
+├── app/                        # FastAPI App Backend
+│   └── main.py                 # API Endpoints (phân trang job, stats, semantic search)
 │
-├── docs/
-│   ├── ROADMAP.md              # checklist 8 milestones (track tiến độ)
-│   ├── STACK.md                # tech stack rationale
-│   └── GLOSSARY.md             # từ điển DE concepts (VN)
-│
-└── .github/workflows/
-    └── ci.yml                  # lint + test + dbt parse
+└── tests/                      # Pytest Suite
+    ├── conftest.py
+    └── test_api_client.py
 ```
 
 ---
 
-## Kiến trúc Medallion
+## 🚀 Hướng dẫn khởi chạy
 
-| Layer | Storage | Format | Mục đích |
-|---|---|---|---|
-| **Raw (Bronze)** | MinIO → ADLS | Parquet, partition `dt=YYYY-MM-DD/` | Lưu y nguyên, replay được khi logic sai |
-| **Staging (Silver)** | Postgres schema `staging` | Tables | Đã dedupe + cast types, chưa modeling |
-| **Warehouse (Gold)** | Postgres schema `warehouse` | Fact + Dim tables (star schema) | Sẵn sàng cho BI / LLM RAG |
+### 1. Chuẩn bị môi trường
+```bash
+cd data-pipeline
+cp .env.example .env
+# Điền đầy đủ thông tin credentials
+```
 
-**Phân công lao động**:
-- **PySpark** làm `Raw → Staging` (cần Python flexibility cho parse phức tạp)
-- **dbt** làm `Staging → Warehouse` (cần SQL modeling + tests + lineage)
+### 2. Khởi chạy Docker Compose (Airflow + MinIO + Postgres + Redis + FastAPI Backend)
+```bash
+docker compose up -d --build
+```
+
+### 3. Setup Database (Tạo extension pgvector và bảng silver.jobs)
+```bash
+docker exec -it techjob-backend python source/setup_db.py
+```
+
+### 4. Sử dụng API Endpoints
+FastAPI Backend chạy tại: `http://localhost:8000/docs` (Swagger UI)
+
+*   **Stats API**: `GET /api/stats`
+*   **List Jobs**: `GET /api/jobs?keyword=python&page=1&size=20`
+*   **Semantic Search (pgvector)**: `GET /api/search?q=machine+learning+python+developer`
+*   **Monthly Hiring Trends**: `GET /api/trends`
+*   **Top Skills**: `GET /api/top-skills`
 
 ---
 
-## Tiến độ
+## 📈 Tích hợp CI/CD
 
-Tick checkbox khi xong từng milestone tại [docs/ROADMAP.md](docs/ROADMAP.md).
-
----
-
-## Tài liệu tham khảo nội bộ
-
-- [docs/ROADMAP.md](docs/ROADMAP.md) — 8 milestones checklist
-- [docs/STACK.md](docs/STACK.md) — tech stack tradeoffs
-- [docs/GLOSSARY.md](docs/GLOSSARY.md) — từ điển DE (Medallion, Idempotency, CDC, ...)
-- Plan đầy đủ (Why + Hands-on chi tiết): `~/.claude/plans/vai-tr-c-a-soft-salamander.md`
-- Repo tham khảo: https://github.com/TrNhDuong/VietnamWorks_DE_Pipeline
+Quy trình tự động hóa kiểm thử được thiết lập tại `.github/workflows/ci.yml`. Nó sẽ:
+1.  Checkout code & Setup Python 3.11
+2.  Cài đặt dependencies từ `requirements.txt`
+3.  Chạy pytest để kiểm tra logic kết nối API và mapping của Spark.
