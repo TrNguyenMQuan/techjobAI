@@ -1,101 +1,111 @@
-# data-pipeline — VietnamWorks ETL
+# TechJob AI - Nền tảng Thông minh về Thị trường Việc làm IT
 
-End-to-end pipeline thu thập + chuẩn hoá dữ liệu tuyển dụng IT Việt Nam từ **VietnamWorks public API**, theo kiến trúc **Medallion** (Raw → Staging → Warehouse).
+## Giới thiệu Tổng quan (Project Overview)
 
-> Phần Data Engineering của dự án [techjobAI](../README.md). Application (FastAPI + LLM + MCP) ở folder khác sau khi pipeline xong.
+TechJob AI là một hệ thống nền tảng thông minh (Smart Platform) được phát triển nhằm tối ưu hóa quá trình tuyển dụng và tìm kiếm việc làm chuyên biệt trong lĩnh vực Công nghệ Thông tin (IT).
 
----
+Bằng việc ứng dụng Trí tuệ Nhân tạo (AI) và Khai phá Dữ liệu (Data Mining), TechJob AI giải quyết bài toán "lệch pha" giữa kỹ năng của ứng viên và yêu cầu của nhà tuyển dụng. Đồng thời, nền tảng cung cấp các báo cáo phân tích theo thời gian thực (Real-time Analytics) về xu hướng của thị trường lao động IT.
 
-## Quick start (chỉ áp dụng sau khi xong các milestones)
-
-```bash
-cd data-pipeline
-cp .env.example .env       # điền credentials
-docker compose up -d       # khởi động Postgres + MinIO + Airflow + Redis
-open http://localhost:8080 # Airflow UI (admin/admin)
-open http://localhost:9001 # MinIO console
-source venv/bin/activate
-```
+Dự án được thực hiện trong khuôn khổ môn học Nhập môn Công nghệ Phần mềm (Intro2SE) tại Trường Đại học Khoa học Tự nhiên, ĐHQG-HCM.
 
 ---
 
-## Cấu trúc thư mục (target — sẽ hình thành dần qua các milestones)
+## Các chức năng chính (Core Features)
 
-```
-data-pipeline/
-├── .env.example                # template biến môi trường
-├── .gitignore                  # loại trừ .env, __pycache__, data/, logs/
-├── requirements.txt            # python deps (pyspark, requests, dotenv, ...)
-├── docker-compose.yml          # Postgres + MinIO + Airflow + Redis
-├── Dockerfile.airflow          # custom Airflow image (cài pyspark + dbt)
-│
-├── dags/                       # Airflow DAGs
-│   └── vietnamworks_etl_dag.py
-│
-├── pipeline/                   # PySpark jobs (1 file = 1 transformation)
-│   ├── extract_to_raw.py       # API → MinIO (Bronze, Parquet, partition dt=)
-│   └── raw_to_staging.py       # MinIO Raw → Postgres staging (Silver)
-│
-├── source/                     # shared utilities (DRY)
-│   ├── api_client.py           # VietnamWorks API client (pagination + retry)
-│   ├── spark_session.py        # factory build SparkSession
-│   ├── storage.py              # abstraction MinIO ↔ ADLS Gen2
-│   ├── setup_db.py             # DDL idempotent
-│   └── logger.py               # structured logging (structlog)
-│
-├── dbt_vietnamworks/           # dbt project (Silver → Gold)
-│   ├── dbt_project.yml
-│   ├── profiles.yml
-│   └── models/
-│       ├── staging/            # 1-1 mirror với staging.jobs
-│       │   ├── stg_jobs.sql
-│       │   ├── _sources.yml
-│       │   └── _schema.yml
-│       └── warehouse/          # fact + dim tables (star schema)
-│           ├── dim_company.sql
-│           ├── dim_skill.sql
-│           └── fact_job_postings.sql
-│
-├── tests/                      # pytest unit + integration tests
-│   ├── conftest.py
-│   ├── test_api_client.py
-│   └── test_transforms.py
-│
-├── docs/
-│   ├── ROADMAP.md              # checklist 8 milestones (track tiến độ)
-│   ├── STACK.md                # tech stack rationale
-│   └── GLOSSARY.md             # từ điển DE concepts (VN)
-│
-└── .github/workflows/
-    └── ci.yml                  # lint + test + dbt parse
-```
+Hệ thống được thiết kế theo kiến trúc hướng dịch vụ với các phân hệ (Modules) chuyên biệt đáp ứng nhu cầu của từng nhóm người dùng (Actors).
+
+### 1. Phân hệ Ứng viên (Candidate Module)
+
+#### Quản lý Hồ sơ Điện tử (E-Profile Management)
+
+Hỗ trợ tạo, cập nhật CV động. Tích hợp tính năng trích xuất dữ liệu (Data Parsing) từ CV định dạng PDF/Word hoặc import từ LinkedIn.
+
+#### Khuyến nghị Việc làm Thông minh (AI-driven Job Recommendation)
+
+Ứng dụng các thuật toán Gợi ý (Recommendation System) để đề xuất công việc (Job Matching) dựa trên bộ kỹ năng (Tech Stacks), kinh nghiệm và định hướng nghề nghiệp.
+
+#### Phân tích Khung Năng lực (Skill Gap Analysis)
+
+Đối chiếu hồ sơ ứng viên với các Job Description (JD) mục tiêu, từ đó phân tích các kỹ năng còn thiếu và đề xuất lộ trình học tập (Learning Path).
+
+#### Theo dõi Trạng thái Ứng tuyển (Application Tracking)
+
+Giao diện quản lý toàn bộ vòng đời ứng tuyển:
+
+* Submitted
+* In-review
+* Interviewing
+* Offered
 
 ---
 
-## Kiến trúc Medallion
+### 2. Phân hệ Nhà tuyển dụng (Recruiter Module)
 
-| Layer | Storage | Format | Mục đích |
-|---|---|---|---|
-| **Raw (Bronze)** | MinIO → ADLS | Parquet, partition `dt=YYYY-MM-DD/` | Lưu y nguyên, replay được khi logic sai |
-| **Staging (Silver)** | Postgres schema `staging` | Tables | Đã dedupe + cast types, chưa modeling |
-| **Warehouse (Gold)** | Postgres schema `warehouse` | Fact + Dim tables (star schema) | Sẵn sàng cho BI / LLM RAG |
+#### Quản lý Tin tuyển dụng (Job Posting Management)
 
-**Phân công lao động**:
-- **PySpark** làm `Raw → Staging` (cần Python flexibility cho parse phức tạp)
-- **dbt** làm `Staging → Warehouse` (cần SQL modeling + tests + lineage)
+Cung cấp các thao tác CRUD cho tin tuyển dụng, hỗ trợ gắn thẻ (Tagging) các kỹ năng yêu cầu (ví dụ: ReactJS, Python, AWS).
 
----
+#### Sàng lọc CV Tự động (Automated Resume Screening)
 
-## Tiến độ
+Tự động phân tích ngữ nghĩa CV (Semantic Parsing) và chấm điểm mức độ phù hợp (Matching Score) giữa CV và JD.
 
-Tick checkbox khi xong từng milestone tại [docs/ROADMAP.md](docs/ROADMAP.md).
+#### Hệ thống Quản lý Ứng viên (ATS - Applicant Tracking System)
+
+Trực quan hóa phễu tuyển dụng (Recruitment Funnel) qua bảng Kanban, tích hợp gửi Email tự động và xếp lịch phỏng vấn (Interview Scheduling).
 
 ---
 
-## Tài liệu tham khảo nội bộ
+### 3. Phân hệ Quản trị viên (Admin Module)
 
-- [docs/ROADMAP.md](docs/ROADMAP.md) — 8 milestones checklist
-- [docs/STACK.md](docs/STACK.md) — tech stack tradeoffs
-- [docs/GLOSSARY.md](docs/GLOSSARY.md) — từ điển DE (Medallion, Idempotency, CDC, ...)
-- Plan đầy đủ (Why + Hands-on chi tiết): `~/.claude/plans/vai-tr-c-a-soft-salamander.md`
-- Repo tham khảo: https://github.com/TrNhDuong/VietnamWorks_DE_Pipeline
+#### Phân quyền & Kiểm soát Truy cập (RBAC - Role-Based Access Control)
+
+Quản lý định danh tài khoản và cấp quyền cho User/Recruiter/Admin.
+
+#### Xác thực Doanh nghiệp (Business KYC)
+
+Quy trình kiểm duyệt và xác thực tính hợp pháp của các công ty đăng ký tài khoản tuyển dụng để chống Spam/Scam.
+
+#### Quản trị Nội dung (CMS)
+
+Quản lý hệ thống dữ liệu từ điển kỹ năng (Skill Taxonomy) và các bài viết nội bộ.
+
+---
+
+### 4. Module Trí tuệ Nhân tạo & Báo cáo (AI & Analytics Module)
+
+#### Bảng điều khiển Xu hướng Thị trường (Market Trend Dashboard)
+
+Trực quan hóa dữ liệu (Data Visualization) về nhu cầu nhân lực, công nghệ xu hướng (Trending Tech Stacks) và phân bố địa lý việc làm.
+
+#### Mô hình Dự báo Lương (Salary Prediction Model)
+
+Đưa ra khoảng lương ước tính (Expected Salary Range) theo thời gian thực dựa vào vị trí, số năm kinh nghiệm và biến động thị trường.
+
+---
+
+## Đội ngũ Phát triển (Team Members)
+
+### Nhóm 6 - CQ 2023/22
+
+* Võ Trần Duy Hoàng - 23120266
+* Võ Gia Huy - 23120277
+* Nguyễn Hữu Khánh Hưng - 23120271
+* Vũ Trần Phúc - 23120333
+* Trần Nguyễn Minh Quân - 23120342
+
+### Giảng viên Hướng dẫn
+
+#### Giảng viên Lý thuyết
+
+* TS. Trần Duy Hoàng
+
+#### Giảng viên Thực hành
+
+* ThS. Ngô Ngọc Đăng Khoa
+* ThS. Hồ Tuấn Thanh
+
+---
+
+## Cài đặt & Triển khai (Setup & Deployment)
+
+*(Chi tiết về Tech Stack (Frontend/Backend/Database/Cloud) và hướng dẫn clone, setup môi trường (Environment Setup) sẽ được cập nhật trong giai đoạn cài đặt).*
