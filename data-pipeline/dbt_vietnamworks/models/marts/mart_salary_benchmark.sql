@@ -23,12 +23,16 @@ job_skill_salary AS(
     INNER JOIN jobs_with_salary AS jws USING (job_id)
 )
 
-SELECT skill_id,
-       skill_name,
-       job_level_id,
+SELECT jss.skill_id,
+       jss.skill_name,
+       jss.job_level_id,
+       COALESCE(lvl.level_name_vi, 'Chưa map (id=' || jss.job_level_id || ')') AS level_name_vi,
+       COALESCE(lvl.seniority_order, 99)                                        AS seniority_order,
        COUNT(*) AS sample_size,
        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary_min)::integer as median_salary_min,
        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY salary_max)::integer as median_salary_max
-FROM job_skill_salary
-GROUP BY skill_id, skill_name, job_level_id
+FROM job_skill_salary AS jss
+LEFT JOIN {{ ref('dim_job_level') }} AS lvl USING (job_level_id)
+GROUP BY jss.skill_id, jss.skill_name, jss.job_level_id,
+         lvl.level_name_vi, lvl.seniority_order
 HAVING COUNT(*) >= 3 -- ignore combination have < 3 sample because meadian isnot meaningful

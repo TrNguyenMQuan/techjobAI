@@ -10,6 +10,11 @@ models:
         tests: [not_null]
       - name: job_title
         tests: [not_null]
+      - name: job_level_id
+        tests:
+          - relationships:
+              to: ref('dim_job_level')
+              field: job_level_id
   
   - name: dim_company
     description: "Unique companies. Deduped by ROW_NUMBER on company_id"

@@ -39,14 +39,9 @@ with DAG(
         op_kwargs={"date_str": "{{ ds }}"},
     )
 
-    dbt_run = BashOperator(
-        task_id="dbt_run",
-        bash_command="cd /opt/airflow/dbt_vietnamworks && /home/airflow/.local/bin/dbt run --profiles-dir . --select staging warehouse",
+    dbt_build = BashOperator(
+        task_id="dbt_build",
+        bash_command="cd /opt/airflow/dbt_vietnamworks && /home/airflow/.local/bin/dbt build --profiles-dir .",
     )
 
-    dbt_test = BashOperator(
-        task_id="dbt_test",
-        bash_command="cd /opt/airflow/dbt_vietnamworks && /home/airflow/.local/bin/dbt test --profiles-dir . --select staging warehouse",
-    )
-
-    ingest_to_bronze >> extract_to_silver >> silver_to_postgres >> dbt_run >> dbt_test
+    ingest_to_bronze >> extract_to_silver >> silver_to_postgres >> dbt_build

@@ -1,4 +1,4 @@
-# ── YAML anchor: tránh lặp config cho 4 Airflow services ────────────────────
+# YAML anchor: tránh lặp config cho 4 Airflow services
 x-airflow-common:
   &airflow-common
   build:
@@ -23,7 +23,6 @@ x-airflow-common:
     MINIO_SECRET_KEY: admin123
 
     # Project Postgres — chạy trên host Mac, không phải trong Docker
-    # host.docker.internal là DNS đặc biệt của Do cker Desktop trỏ về máy host
     POSTGRES_HOST: host.docker.internal
     POSTGRES_PORT: 5432
     POSTGRES_DB: ${POSTGRES_DB}
@@ -48,7 +47,7 @@ x-airflow-common:
       condition: service_healthy
 
 services:
-  # ── Object Storage ──────────────────────────────────────────────────────────
+  # Object Storage 
   minio:
     image: quay.io/minio/minio:latest
     ports:
@@ -80,7 +79,7 @@ services:
       echo 'Buckets ready: bronze, silver'
       "
 
-  # ── Airflow Infrastructure ──────────────────────────────────────────────────
+  # Airflow Infrastructure
   postgres-airflow:
     image: postgres:16
     environment:
@@ -107,7 +106,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Airflow Services ─────────────────────────────────────────────────────────
+  # Airflow Services─
   airflow-init:
     <<: *airflow-common
     # Chạy 1 lần duy nhất: migrate DB schema + tạo user admin/admin
@@ -147,7 +146,22 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    ports:
+      - "3001:3000"
+    environment:
+      MB_DB_TYPE: h2 # h2 database use to save config about metabase
+      MB_DB_FILE: /metabase-data/metabase.db 
+    volumes:
+      - metabase-data:/metabase-data
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
 volumes:
   minio_data:
   postgres_airflow_data:
   airflow_logs:
+  metabase-data:
