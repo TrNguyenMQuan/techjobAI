@@ -11,6 +11,7 @@ def get_conn():
         dbname=os.getenv("POSTGRES_DB", "techjob_ai"),
         user=os.getenv("POSTGRES_USER", "postgres"),
         password=os.getenv("POSTGRES_PASSWORD", ""),
+        sslmode=os.getenv("POSTGRES_SSLMODE", "prefer"), 
     )
 
 def setup():
