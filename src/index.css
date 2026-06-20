@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-bg font-sans text-sm text-text-primary;
+    margin: 0;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar        { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track  { background: transparent; }
+  ::-webkit-scrollbar-thumb  { @apply bg-text-muted rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-text-secondary; }
+}
+
+/* ─── Skeleton shimmer ────────────────────────────────────────────────────── */
+@layer components {
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      #e8e8f0 25%,
+      #f0f0f8 50%,
+      #e8e8f0 75%
+    );
+    background-size: 400px 100%;
+    @apply animate-shimmer rounded;
+  }
+
+  /* Sidebar active highlight bar */
+  .sidebar-active {
+    background: #4338CA;
+    color: #fff;
+    border-left: 3px solid #10B981;
+  }
+
+  /* Sidebar hover */
+  .sidebar-item:hover:not(.sidebar-active) {
+    background: rgba(255,255,255,0.08);
+  }
+
+  /* AI badge base */
+  .ai-badge {
+    @apply inline-flex items-center gap-1 text-2xs font-medium px-2 py-0.5 rounded-full;
+  }
+
+  /* Typing indicator dots */
+  .typing-dot:nth-child(1) { animation-delay: 0s; }
+  .typing-dot:nth-child(2) { animation-delay: 0.2s; }
+  .typing-dot:nth-child(3) { animation-delay: 0.4s; }
+
+  /* Job card hover lift */
+  .job-card {
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .job-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.12);
+  }
+
+  /* Chat bubble */
+  .bubble-user {
+    @apply bg-indigo rounded-lg rounded-br-sm text-white px-4 py-2.5 max-w-xs;
+  }
+  .bubble-ai {
+    @apply bg-white rounded-lg rounded-bl-sm shadow-card px-4 py-2.5 max-w-xl;
+  }
+}
+
+/* ─── Recharts overrides ──────────────────────────────────────────────────── */
+.recharts-tooltip-wrapper { outline: none !important; }
+.recharts-legend-wrapper  { padding-top: 8px !important; }
+
+/* ─── Transition helpers ──────────────────────────────────────────────────── */
+.transition-base { transition: all 0.2s ease; }
+
+/* ─── Custom range slider ─────────────────────────────────────────────────── */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  @apply rounded-full bg-violet-bg;
+  outline: none;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  @apply bg-violet cursor-pointer;
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
