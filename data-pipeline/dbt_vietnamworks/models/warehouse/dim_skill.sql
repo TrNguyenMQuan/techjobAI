@@ -6,7 +6,7 @@ with source as(
         skills
     from {{ ref('stg_jobs') }}
     where skills is not null and
-          jsonb_array_length(skills) > 0
+          jsonb_array_length(skills::jsonb) > 0
 ),
 
 exploded as(
@@ -14,7 +14,7 @@ exploded as(
         (skill ->> 'skillId')::integer as skill_id,
         skill ->> 'skillName'          as skill_name
     from source,
-         jsonb_array_elements(skills) as skill 
+         jsonb_array_elements(skills::jsonb) as skill 
 ),
 
 final as (

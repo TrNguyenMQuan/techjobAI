@@ -7,10 +7,10 @@
 
 WITH job_locations_exploded AS(
     SELECT job_id,
-           jsonb_array_elements(working_locations) AS location_element
+           jsonb_array_elements(working_locations::jsonb) AS location_element
     FROM {{ ref('fact_job_postings') }}
     WHERE working_locations IS NOT null
-        AND jsonb_array_length(working_locations) > 0
+        AND jsonb_array_length(working_locations::jsonb) > 0
 )
 
 SELECT

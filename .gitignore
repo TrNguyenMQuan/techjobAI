@@ -25,3 +25,6 @@ CLAUDE.md
 # OS
 .DS_Store
 Thumbs.db
+.venv/
+data/
+scratch_fetch.py

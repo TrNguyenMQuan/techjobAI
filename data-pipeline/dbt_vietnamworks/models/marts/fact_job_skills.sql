@@ -9,10 +9,10 @@ WITH job_skills_exploded AS (
     SELECT 
         job_id,
         created_on,
-        jsonb_array_elements(skills) AS skill_element
+        jsonb_array_elements(skills::jsonb) AS skill_element
     FROM {{ ref('fact_job_postings') }}
     WHERE skills is not null 
-        AND jsonb_array_length(skills) > 0
+        AND jsonb_array_length(skills::jsonb) > 0
 )
 
 SELECT

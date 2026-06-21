@@ -4,7 +4,7 @@ with source as (
     select working_locations
     from {{ ref('stg_jobs') }}
     where working_locations is not null 
-        and jsonb_array_length(working_locations) > 0
+        and jsonb_array_length(working_locations::jsonb) > 0
 ),
 
 exploded as (
@@ -12,7 +12,7 @@ exploded as (
         (loc ->> 'cityId')::integer as city_id,
         loc ->> 'cityNameVI'        as city_name_vi
     from source,
-        jsonb_array_elements(working_locations) as loc
+        jsonb_array_elements(working_locations::jsonb) as loc
 ),
 
 final as (
