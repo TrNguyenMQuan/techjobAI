@@ -109,6 +109,8 @@ df = pd.read_sql("SELECT * FROM warehouse_marts.mart_salary_features", engine)
 
 > **Bảng tra cứu (dimensions)** ở schema `warehouse_warehouse` (`dim_job_level`, `dim_location`, `dim_company`, `dim_skill`) — dùng để JOIN giải mã các cột `*_id`. `machine_learning_readonly` cần được grant đọc schema này (xem [§3.3.1](#331-mapping-mã-categorical--nhãn)).
 
+> **Embeddings (semantic search)** ở schema `warehouse_warehouse`: bảng `job_embeddings` — `vector(1024)` sinh bằng `BAAI/bge-m3`. Data contract đầy đủ ở [§3.5](#35-data-contract--job_embeddings-m10).
+
 ### 3.3. Data contract — `mart_salary_features` (M9)
 
 Bảng feature chính cho model dự đoán lương. **Schema ổn định** — DE cam kết tên cột/kiểu không đổi giữa các lần refresh (version `v1`).
@@ -174,6 +176,46 @@ SELECT skill_name, SUM(job_count) AS total
 FROM warehouse_marts.mart_skill_demand
 GROUP BY skill_name ORDER BY total DESC LIMIT 15;
 ```
+
+### 3.5. Data contract — `job_embeddings` (M10)
+
+Bảng vector cho **AI Job Recommendation** & **Automated Resume Screening** (semantic search).
+Khác các bảng trên: nằm ở schema **`warehouse_warehouse`** (không phải `warehouse_marts`).
+
+| Cột | Kiểu | Ghi chú |
+|---|---|---|
+| `job_id` | int | khoá, 1 row/job; JOIN `fact_job_postings` để lấy chi tiết job |
+| `embedding` | `vector(1024)` | vector đã **normalize** (unit length) |
+| `model_name` | text | model sinh vector — hiện: `BAAI/bge-m3` |
+| `embedded_at` | timestamp | thời điểm tính vector |
+
+**Luật bắt buộc:**
+- **Cùng 1 model**: query của bạn PHẢI embed bằng đúng `BAAI/bge-m3` + `normalize_embeddings=True`. Khác model → khoảng cách vô nghĩa.
+- **Khoảng cách**: cosine `<=>` (nhỏ = giống nhau). `similarity = 1 - (a <=> b)`.
+- **Coverage**: embeddings refresh **thủ công** (Colab) → không đảm bảo mọi job đều có vector mọi lúc. Job chưa embed = không có row. Kiểm độ phủ bằng `LEFT JOIN fact_job_postings`.
+
+**Tìm 5 job giống nhất với một job (thay `:id` bằng job_id):**
+```sql
+WITH anchor AS (
+    SELECT embedding FROM warehouse_warehouse.job_embeddings WHERE job_id = :id
+)
+SELECT f.job_id, f.job_title, 1 - (e.embedding <=> a.embedding) AS similarity
+FROM warehouse_warehouse.job_embeddings e
+JOIN warehouse_warehouse.fact_job_postings f USING (job_id)
+CROSS JOIN anchor a
+WHERE e.job_id <> :id
+ORDER BY e.embedding <=> a.embedding
+LIMIT 5;
+```
+
+**Search bằng câu chữ tự do (Python — tự embed query bằng bge-m3):**
+```python
+qvec = model.encode(["Python backend, Docker, Kubernetes"], normalize_embeddings=True)[0]
+# rồi: ORDER BY embedding <=> '<qvec>'::vector LIMIT 5
+```
+
+> Refresh embeddings: notebook `notebooks/embeding_jobs.ipynb` chạy trên **Colab GPU**
+> (đọc Neon → bge-m3 → UPSERT). Tự động hoá qua Airflow: **deferred**.
 
 ---
 
