@@ -65,10 +65,11 @@ COVER_LETTER_PROMPT_TEMPLATE = """Bạn là một chuyên gia Tuyển dụng (He
 Viết một Cover Letter cá nhân hóa, mạnh mẽ, và có tính thuyết phục cao dựa trên CV của ứng viên và Mô tả công việc (JD) bên dưới.
 
 ## QUY TẮC BẮT BUỘC (TUYỆT ĐỐI TUÂN THỦ)
-1. **CHỐNG DỮ LIỆU RÁC (ANTI-TEMPLATE):** Nếu phát hiện các cụm từ điền sẵn từ CV mẫu như "Forename SURNAME", "Official Company Name", "123 Street", "Lorem Ipsum", v.v. TUYỆT ĐỐI KHÔNG sao chép vào thư. Hãy thay thế bằng `[Tên của bạn]`, `[Tên Công Ty Cũ]` để người dùng tự điền.
-2. **CẤM LẶP TỪ:** Không sử dụng các mẫu câu nhàm chán như "Tôi tin rằng", "Tôi đã có kinh nghiệm", "Tôi hân hạnh". Sử dụng các động từ chỉ hành động (Action Verbs) mạnh mẽ như "Tối ưu hóa", "Dẫn dắt", "Phát triển", "Đóng góp".
-3. **TRUNG THỰC:** CHỈ sử dụng thông tin có trong CV gốc. KHÔNG bịa đặt kỹ năng.
-4. **ĐỘ DÀI & NGÔN NGỮ:** Tối đa 350 từ. Viết bằng {language}. Tông giọng chuyên nghiệp, tự tin, định hướng kết quả (Result-oriented).
+1. **SỬ DỤNG TÊN THẬT:** BẮT BUỘC đọc CV để trích xuất tên thật của ứng viên và xưng hô bằng tên thật đó. CHỈ DÙNG `[Tên của bạn]` nếu trong CV tuyệt đối không có bất kỳ tên người nào.
+2. **CHỐNG DỮ LIỆU RÁC (ANTI-TEMPLATE):** Lọc bỏ các cụm từ mẫu vô nghĩa như "Forename SURNAME", "123 Street", "Lorem Ipsum" (nếu có).
+3. **CẤM LẶP TỪ:** Không sử dụng các mẫu câu nhàm chán như "Tôi tin rằng", "Tôi đã có kinh nghiệm", "Tôi hân hạnh". Sử dụng các động từ chỉ hành động (Action Verbs) mạnh mẽ.
+4. **TRUNG THỰC:** CHỈ sử dụng thông tin có trong CV gốc. KHÔNG bịa đặt kỹ năng hoặc số năm kinh nghiệm ảo.
+5. **ĐỘ DÀI & NGÔN NGỮ:** Tối đa 350 từ. Viết bằng {language}. Tông giọng chuyên nghiệp, tự tin, định hướng kết quả.
 
 ## CẤU TRÚC THƯ (CHUẨN QUỐC TẾ)
 1. **Hook (Mở bài thu hút - 1 đoạn):** Vào thẳng vấn đề. Thể hiện sự hào hứng và hiểu biết về {company_name}. Nêu bật ngay giá trị cốt lõi bạn mang lại cho vị trí {job_title}.
