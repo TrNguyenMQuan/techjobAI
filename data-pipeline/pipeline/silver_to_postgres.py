@@ -10,7 +10,11 @@ def jdbc_url():
     host = os.getenv("POSTGRES_HOST", "localhost")
     port = os.getenv("POSTGRES_PORT", "5432")
     db   = os.getenv("POSTGRES_DB", "techjob_ai")
-    return f"jdbc:postgresql://{host}:{port}/{db}?stringtype=unspecified"
+    url = f"jdbc:postgresql://{host}:{port}/{db}?stringtype=unspecified"
+    sslmode = os.getenv("POSTGRES_SSLMODE")
+    if sslmode:
+        url += f"&sslmode={sslmode}"
+    return url 
 
 def jdbc_props() -> dict:
     return {

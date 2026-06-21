@@ -38,3 +38,17 @@ models:
         tests: [not_null]
       - name: sample_size
         tests: [not_null]
+  
+  - name: mart_salary_features
+    description: >
+      ML feature table for salary prediction. Grain = 1 row / job which having salary
+      Consistency schema with column has_* create from vars.top_skills 
+    columns:
+      - name: job_id
+        tests: [unique, not_null]
+      - name: salary_midpoint
+        tests: [not_null]
+      - name: salary_min 
+        tests: [not_null]
+      - name: salary_max
+        tests: [not_null]
