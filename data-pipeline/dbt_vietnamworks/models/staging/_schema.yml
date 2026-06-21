@@ -1,0 +1,28 @@
+# Data quality
+version: 2
+
+models:
+  - name: stg_jobs
+    description: "Stagin view - normalized columns from silver"
+
+    columns:
+      - name: job_id
+        description: "Primary key - unique job ID"
+        data_tests:
+          - unique
+          - not_null
+
+      - name: job_title
+        description: "Name of JD"
+        data_tests:
+          - not_null 
+      
+      - name: company_id
+        description: "ID from company"
+        data_tests:
+          - not_null
+
+      - name: created_on
+        description: "Date of upload JD"
+        data_tests:
+          - not_null

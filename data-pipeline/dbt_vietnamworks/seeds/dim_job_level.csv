@@ -1,0 +1,6 @@
+job_level_id,level_name_vi,level_name_en,seniority_order
+8,Thực tập sinh/Sinh viên,Intern/Student,1
+1,Mới Tốt Nghiệp,Fresher/Entry level,2
+5,Nhân viên,Experienced (non-manager),3
+7,Trưởng phòng,Manager,4
+3,Giám Đốc và Cấp Cao Hơn,Director and above,5

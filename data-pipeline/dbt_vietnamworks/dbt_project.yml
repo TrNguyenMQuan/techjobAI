@@ -1,0 +1,61 @@
+name: 'dbt_vietnamworks'
+version: '1.0.0'
+profile: 'dbt_vietnamworks'
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  dbt_vietnamworks:
+    staging:
+      +materialized: view      # staging = view, luôn query live từ silver.jobs
+      +schema: staging         # tạo trong schema "staging" (không phải "warehouse")
+    warehouse:
+      +materialized: table     # mặc định warehouse = table (dim_company, dim_skill)
+      +schema: warehouse       # tạo trong schema "warehouse"
+      fact_job_postings:
+        +materialized: incremental  # override: fact table chỉ append rows mới
+    marts:
+      +materialized: table
+      +schema: marts
+
+seeds: 
+  dbt_vietnamworks:
+    +schema: warehouse
+
+vars:
+  salary_feature_skills_version: 'v1'
+  top_skills:
+    - {name: 'SQL',                  slug: 'sql'}
+    - {name: 'Python',               slug: 'python'}
+    - {name: 'Data Analysis',        slug: 'data_analysis'}
+    - {name: 'Project Management',   slug: 'project_management'}
+    - {name: 'English',              slug: 'english'}
+    - {name: 'Công Nghệ Thông Tin',  slug: 'cong_nghe_thong_tin'}
+    - {name: 'Business Analysis',    slug: 'business_analysis'}
+    - {name: 'Communication Skills', slug: 'communication_skills'}
+    - {name: 'Communication',        slug: 'communication'}
+    - {name: 'Analytical Skills',    slug: 'analytical_skills'}
+    - {name: 'Java',                 slug: 'java'}
+    - {name: 'Technical Support',    slug: 'technical_support'}
+    - {name: 'Power BI',             slug: 'power_bi'}
+    - {name: 'Problem-solving',      slug: 'problem_solving'}
+    - {name: 'Oracle',               slug: 'oracle'}
+    - {name: 'PostgreSQL',           slug: 'postgresql'}
+    - {name: 'C#',                   slug: 'c_sharp'}
+    - {name: 'Quản Lý Dự Án',        slug: 'quan_ly_du_an'}
+    - {name: 'AI',                   slug: 'ai'}
+    - {name: 'Phân Tích Dữ Liệu',    slug: 'phan_tich_du_lieu'}
+    - {name: 'JavaScript',           slug: 'javascript'}
+    - {name: 'Machine Learning',     slug: 'machine_learning'}
+    - {name: 'An Toàn Thông Tin',    slug: 'an_toan_thong_tin'}
+    - {name: 'Agile',                slug: 'agile'}
+    - {name: 'Leadership',           slug: 'leadership'}

@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: fact_job_skills
+    description: "Bridge table: 1 row per (job, skill) combination"
+    columns:
+      - name: job_id
+        tests: [not_null]
+      - name: skill_id
+        tests: [not_null]
+      - name: skill_name
+        tests: [not_null]
+  
+  - name: mart_skill_demand
+    description: "Job count per skill per week"
+    columns:
+      - name: skill_id
+        tests: [not_null]
+      - name: week_start
+        tests: [not_null]
+      - name: job_count
+        tests: [not_null]
+  
+  - name: mart_location_demand
+    description: "Job count per city"
+    columns:
+      - name: city_id
+        tests: [not_null]
+      - name: job_count
+        tests: [not_null]
+
+  - name: mart_salary_benchmark
+    description: "Median salary per skill + job level. Only includes salary-visible jobs with >= 3 samples."
+    columns:
+      - name: skill_id
+        tests: [not_null]
+      - name: job_level_id
+        tests: [not_null]
+      - name: sample_size
+        tests: [not_null]
+  
+  - name: mart_salary_features
+    description: >
+      ML feature table for salary prediction. Grain = 1 row / job which having salary
+      Consistency schema with column has_* create from vars.top_skills 
+    columns:
+      - name: job_id
+        tests: [unique, not_null]
+      - name: salary_midpoint
+        tests: [not_null]
+      - name: salary_min 
+        tests: [not_null]
+      - name: salary_max
+        tests: [not_null]

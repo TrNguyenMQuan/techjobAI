@@ -1,0 +1,15 @@
+version: 2
+
+sources:
+  - name: silver 
+    schema: silver
+    description: "Cleaned jobs data from Silver layer"
+
+    tables:
+      - name: jobs
+        description: "Information about IT job crawled, deduplicated"
+        loaded_at_field: created_on
+        freshness:
+          warn_after: {count: 25, period: hour}
+          error_after: {count: 48, period: hour}
+          

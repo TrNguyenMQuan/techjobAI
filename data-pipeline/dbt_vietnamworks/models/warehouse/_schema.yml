@@ -1,0 +1,35 @@
+version: 2
+
+models:
+  - name: fact_job_postings
+    description: "Core fact table: 1 row per job postings"
+    columns:
+      - name: job_id
+        tests: [unique, not_null]
+      - name: company_id
+        tests: [not_null]
+      - name: job_title
+        tests: [not_null]
+      - name: job_level_id
+        tests:
+          - relationships:
+              to: ref('dim_job_level')
+              field: job_level_id
+  
+  - name: dim_company
+    description: "Unique companies. Deduped by ROW_NUMBER on company_id"
+    columns:
+      - name: company_id
+        tests: [unique, not_null]
+  
+  - name: dim_skill
+    description: "Unique skill exploded from JSONB"
+    columns:
+      - name: skill_id
+        tests: [unique, not_null]
+
+  - name: dim_location
+    description: "Unique cities exploded from JSONB"
+    columns:
+      - name: city_id
+        tests: [unique, not_null]
