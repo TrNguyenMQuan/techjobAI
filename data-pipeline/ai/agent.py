@@ -123,7 +123,7 @@ def _make_tools():
 
         # Cache model globally to avoid reloading on every call
         if not hasattr(semantic_search_tool, "_model"):
-            semantic_search_tool._model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+            semantic_search_tool._model = SentenceTransformer("BAAI/bge-m3")
         model = semantic_search_tool._model
 
         query_vec = model.encode(query).tolist()

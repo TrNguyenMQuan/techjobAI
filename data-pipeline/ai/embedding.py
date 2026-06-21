@@ -35,9 +35,9 @@ DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
 
 DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
-BATCH_SIZE = 64  # Jobs per batch
-VECTOR_DIM = 384  # all-MiniLM-L6-v2 output dimension
+MODEL_NAME = "BAAI/bge-m3"
+BATCH_SIZE = 8  # Smaller batches for larger model
+VECTOR_DIM = 1024  # BAAI/bge-m3 output dimension
 
 
 # ============================================================

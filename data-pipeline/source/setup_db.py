@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "384"))
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 
 def get_conn(target="dev"):
     if target == "prod":
