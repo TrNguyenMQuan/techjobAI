@@ -33,7 +33,7 @@ _search_model = None
 def get_model():
     global _search_model
     if _search_model is None:
-        _search_model = SentenceTransformer("BAAI/bge-m3")
+        _search_model = SentenceTransformer("all-MiniLM-L6-v2")
     return _search_model
 
 def get_conn():
