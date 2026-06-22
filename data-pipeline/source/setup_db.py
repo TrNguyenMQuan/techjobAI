@@ -70,7 +70,7 @@ def setup_embeddings(target="dev"):
     cur.execute("""
         CREATE TABLE IF NOT EXISTS warehouse_warehouse.job_embeddings (
             job_id          INTEGER PRIMARY KEY,
-            embedding       vector(1024),
+            embedding       vector(384),
             model_name      TEXT NOT NULL,
             embedded_at     TIMESTAMP DEFAULT NOW()
         );
