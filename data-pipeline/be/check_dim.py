@@ -11,24 +11,27 @@ try:
     )
     cur = conn.cursor()
 
-    print("Checking column schema...")
+    print("Columns of mart_skill_demand:")
     cur.execute("""
-        SELECT column_name, data_type, udt_name 
+        SELECT column_name, data_type 
         FROM information_schema.columns 
-        WHERE table_schema = 'warehouse_warehouse' 
-        AND table_name = 'job_embeddings'
-        AND column_name = 'embedding';
+        WHERE table_schema = 'warehouse_marts' 
+        AND table_name = 'mart_skill_demand';
     """)
-    row = cur.fetchone()
-    print(f"Schema: {row}")
+    cols = cur.fetchall()
+    for c in cols:
+        print(c)
 
-    print("Checking actual data dimensions...")
-    cur.execute("SELECT vector_dims(embedding) FROM warehouse_warehouse.job_embeddings WHERE embedding IS NOT NULL LIMIT 1;")
-    dim = cur.fetchone()
-    if dim:
-        print(f"Dimensions: {dim[0]}")
-    else:
-        print("No data found in the table.")
+    print("Columns of mart_salary_benchmark:")
+    cur.execute("""
+        SELECT column_name, data_type 
+        FROM information_schema.columns 
+        WHERE table_schema = 'warehouse_marts' 
+        AND table_name = 'mart_salary_benchmark';
+    """)
+    cols = cur.fetchall()
+    for c in cols:
+        print(c)
 
     cur.close()
     conn.close()

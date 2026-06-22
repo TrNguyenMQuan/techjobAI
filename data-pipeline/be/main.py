@@ -79,7 +79,13 @@ def get_stats():
     """Dashboard overview stats."""
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT * FROM warehouse_warehouse.dashboard_cache LIMIT 1;")
+    cur.execute("""
+        SELECT 
+            (SELECT COUNT(*) FROM warehouse_warehouse.fact_job_postings) as total_jobs,
+            (SELECT COUNT(*) FROM warehouse_warehouse.dim_location) as total_cities,
+            (SELECT COUNT(*) FROM warehouse_warehouse.dim_skill) as total_skills,
+            (SELECT COUNT(*) FROM warehouse_warehouse.dim_company) as total_companies;
+    """)
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -137,7 +143,7 @@ def get_top_skills(limit: int = Query(20, ge=1, le=50)):
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "SELECT skill_name, job_count FROM warehouse_warehouse.agg_top_skills ORDER BY job_count DESC LIMIT %s;",
+        "SELECT skill_name, SUM(job_count) AS job_count FROM warehouse_marts.mart_skill_demand GROUP BY skill_name ORDER BY job_count DESC LIMIT %s;",
         [limit],
     )
     rows = cur.fetchall()
@@ -151,7 +157,7 @@ def get_salary_by_title():
     """Average salary by job category."""
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT * FROM warehouse_warehouse.agg_salary_by_title ORDER BY job_count DESC;")
+    cur.execute("SELECT skill_name, level_name_vi, median_salary_min, median_salary_max, sample_size FROM warehouse_marts.mart_salary_benchmark ORDER BY sample_size DESC LIMIT 50;")
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -172,10 +178,13 @@ def semantic_search(
     conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        """SELECT f.source_id, f.title, f.company_name, f.primary_city,
-                  f.salary_text, f.salary_band, f.source_url,
+        """SELECT f.job_id AS source_id, f.job_title AS title, c.company_name,
+                  COALESCE(f.working_locations->0->>'city', 'Unknown') AS primary_city,
+                  CONCAT(f.salary_min, ' - ', f.salary_max) AS salary_text,
+                  '' AS salary_band, '' AS source_url,
                   1 - (e.embedding <=> %s::vector) AS similarity
-           FROM warehouse_warehouse.fact_job f
+           FROM warehouse_warehouse.fact_job_postings f
+           LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
            JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
            ORDER BY e.embedding <=> %s::vector
            LIMIT %s;""",
