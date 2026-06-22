@@ -25,9 +25,7 @@ DB_PORT = os.getenv("POSTGRES_PORT", "5432")
 DB_USER = os.getenv("POSTGRES_USER", "techjob")
 DB_PASS = os.getenv("POSTGRES_PASSWORD", "techjob123")
 DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
-
-import requests
-COLAB_EMBEDDING_URL = os.getenv("COLAB_EMBEDDING_URL", "")
+DB_SSLMODE = os.getenv("PGSSLMODE", "prefer")
 
 # Model for semantic search (cached globally)
 _search_model = None
@@ -35,30 +33,14 @@ _search_model = None
 def get_model():
     global _search_model
     if _search_model is None:
-        _search_model = SentenceTransformer("all-MiniLM-L6-v2")
+        _search_model = SentenceTransformer("BAAI/bge-m3")
     return _search_model
-
-def get_embedding(query_text: str):
-    """Lấy embedding từ Colab API (nếu có) hoặc dùng Model local."""
-    if COLAB_EMBEDDING_URL:
-        try:
-            res = requests.post(f"{COLAB_EMBEDDING_URL}/encode", json={"text": query_text}, timeout=10)
-            if res.status_code == 200:
-                return res.json()["embedding"]
-            else:
-                print(f"Colab API Error: {res.text}")
-        except Exception as e:
-            print(f"Colab Request Failed: {e}")
-            
-    # Fallback to local model
-    m = get_model()
-    return m.encode(query_text).tolist()
 
 def get_conn():
     return psycopg2.connect(
         host=DB_HOST, port=int(DB_PORT),
         user=DB_USER, password=DB_PASS,
-        dbname=DB_NAME
+        dbname=DB_NAME, sslmode=DB_SSLMODE
     )
 
 # ============================================================
@@ -182,7 +164,9 @@ def semantic_search(
     limit: int = Query(10, ge=1, le=50),
 ):
     """Semantic search using pgvector cosine similarity via job_embeddings table (M10)."""
-    query_vec = get_embedding(q)
+    m = get_model()
+    # Normalize embeddings is REQUIRED for valid cosine distance search using <=> in pgvector
+    query_vec = m.encode(q, normalize_embeddings=True).tolist()
     vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
 
     conn = get_conn()
