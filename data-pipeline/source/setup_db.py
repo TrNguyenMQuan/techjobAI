@@ -4,7 +4,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-def get_conn():
+EMBEDDING_DIM = int(os.getenv("EMBEDDING_DIM", "384"))
+
+def get_conn(target="dev"):
+    if target == "prod":
+        return psycopg.connect(
+            host=os.getenv("NEON_HOST"),
+            port=int(os.getenv("NEON_PORT", 5432)),
+            dbname=os.getenv("NEON_DB"),
+            user=os.getenv("NEON_USER"),
+            password=os.getenv("NEON_PASSWORD"),
+            sslmode="require", 
+        )
     return psycopg.connect(
         host=os.getenv("POSTGRES_HOST", "localhost"),
         port=int(os.getenv("POSTGRES_PORT", 5432)),
