@@ -1,4 +1,4 @@
-import { mockDelay } from './api'
+import { api, mockDelay } from './api'
 import { MOCK_JOBS, SKILL_DATA } from '../data/mockData'
 
 // In production this connects to a real backend WebSocket / SSE endpoint that
@@ -7,7 +7,7 @@ import { MOCK_JOBS, SKILL_DATA } from '../data/mockData'
 // implementation below returns a realistic canned response so the full chat
 // UI (streaming, mini job cards, inline charts, RAG badges) can be demoed
 // without a backend.
-const USE_MOCK = true
+const USE_MOCK = false
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/chat'
 
 /**
@@ -18,12 +18,28 @@ const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/chat'
  */
 export async function sendChatMessage(text, _history = []) {
   if (!USE_MOCK) {
-    // Example real implementation:
-    // const { data } = await api.post('/chat/message', { text, history: _history })
-    // return data
-    throw new Error('Real chat backend not configured — set VITE_WS_URL and USE_MOCK=false')
+    try {
+      const { data } = await api.post('/chat', null, {
+        params: { message: text, session_id: 'default' }
+      })
+      return {
+        type: 'mixed',
+        content: data.response,
+        jobCards: [],
+        showChart: data.tools_used && data.tools_used.includes('generate_chart_tool'),
+      }
+    } catch (err) {
+      console.error('Chat backend error:', err)
+      return {
+        type: 'text',
+        content: 'Xin lỗi, tôi đang gặp sự cố khi kết nối tới hệ thống AI.',
+        jobCards: [],
+        showChart: false
+      }
+    }
   }
 
+  // fallback to mock delay if USE_MOCK=true
   await mockDelay(300)
   const t = text.toLowerCase()
 

@@ -53,14 +53,13 @@ Bạn có quyền truy cập vào cơ sở dữ liệu tuyển dụng IT thực 
 5. **generate_chart_tool**: Tạo biểu đồ trực quan hóa dữ liệu
 
 ## CƠ SỞ DỮ LIỆU
-Bảng chính: `warehouse_warehouse.fact_job`
-- Cột quan trọng: source_id, title, company_name, primary_city, salary_min_vnd, salary_max_vnd, salary_band, job_level_vi, work_mode, description, requirements, skills_json, posted_date
+Bảng chính: `warehouse_warehouse.fact_job_postings` JOIN với `warehouse_warehouse.dim_company` qua `company_id`.
+- Cột quan trọng trong `fact_job_postings`: job_id, job_title, salary_min, salary_max, working_locations, skills, created_on.
+- Cột quan trọng trong `dim_company`: company_name.
 
 Bảng thống kê:
-- `warehouse_warehouse.agg_top_skills` (skill_name, job_count)
-- `warehouse_warehouse.agg_salary_by_title` (job_category, avg_min_trieu, avg_max_trieu, job_count)
-- `warehouse_warehouse.agg_trend_monthly` (month, job_count)
-- `warehouse_warehouse.dashboard_cache` (tổng quan)
+- `warehouse_marts.mart_skill_demand` (skill_name, job_count)
+- `warehouse_marts.mart_salary_benchmark` (skill_name, level_name_vi, median_salary_min, median_salary_max, sample_size)
 
 ## QUY TẮC
 1. Luôn trả lời bằng tiếng Việt (trừ khi user yêu cầu tiếng Anh)
@@ -85,10 +84,9 @@ def _make_tools():
     def execute_sql_tool(sql: str) -> str:
         """Execute a read-only SQL SELECT query against the TechJob AI data warehouse.
         The database contains job postings, salary data, skills, and company info.
-        Tables: warehouse_warehouse.fact_job, agg_top_skills, agg_salary_by_title,
-        agg_trend_monthly, dashboard_cache, dim_skill, dim_company, dim_location.
-        Key columns in fact_job: title, company_name, primary_city, salary_min_vnd,
-        salary_max_vnd, salary_band, job_level_vi, work_mode, skills_json, posted_date.
+        Tables: warehouse_warehouse.fact_job_postings, warehouse_warehouse.dim_company, 
+        warehouse_marts.mart_skill_demand, warehouse_marts.mart_salary_benchmark.
+        Key columns in fact_job_postings: job_id, company_id, job_title, salary_min, salary_max, working_locations, created_on.
         Only SELECT/WITH queries allowed. DELETE/UPDATE/DROP are blocked."""
         result = execute_sql(sql)
         if isinstance(result, list) and len(result) > 15:

@@ -7,16 +7,27 @@ Tools:
   - execute_rag_culture_tool: RAG retrieval for company culture data
 
 Usage:
-    python -m app.mcp_server  (stdio mode for Agent integration)
+    python -m be.mcp_server              # MCP stdio server
+    python -m be.mcp_server --self-test  # quick local safety checks
 """
 
 import os
 import re
 import json
+import sys
 from pathlib import Path
-from dotenv import load_dotenv
-import psycopg2
-import psycopg2.extras
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*_args, **_kwargs):
+        return False
+
+try:
+    import psycopg2
+    import psycopg2.extras
+except ImportError:
+    psycopg2 = None
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
@@ -37,8 +48,40 @@ BLOCKED_PATTERNS = re.compile(
 MAX_ROWS = 200
 
 
+def list_techjob_tables() -> dict:
+    """Return the main warehouse objects exposed to agents and MCP clients."""
+    return {
+        "warehouse": [
+            "warehouse_warehouse.fact_job",
+            "warehouse_warehouse.dim_company",
+            "warehouse_warehouse.dim_skill",
+            "warehouse_warehouse.dim_location",
+            "warehouse_warehouse.job_embeddings",
+            "warehouse_warehouse.company_culture",
+        ],
+        "marts": [
+            "warehouse_marts.mart_skill_demand",
+            "warehouse_marts.mart_salary_benchmark",
+            "warehouse_marts.mart_salary_features",
+            "warehouse_marts.mart_location_demand",
+        ],
+        "aggregates": [
+            "warehouse_warehouse.agg_top_skills",
+            "warehouse_warehouse.agg_salary_by_title",
+            "warehouse_warehouse.agg_trend_monthly",
+            "warehouse_warehouse.dashboard_cache",
+        ],
+    }
+
+
 def _get_readonly_conn():
     """Create a read-only database connection."""
+    if psycopg2 is None:
+        raise RuntimeError(
+            "psycopg2 is required for database-backed MCP tools. "
+            "Install data-pipeline/requirements.txt first."
+        )
+
     conn = psycopg2.connect(
         host=DB_HOST,
         port=int(DB_PORT),
@@ -244,6 +287,14 @@ def get_tool_definitions():
                 "required": ["company_name"],
             },
         },
+        {
+            "name": "list_techjob_tables_tool",
+            "description": "List the main TechJob AI warehouse, mart, aggregate, embedding, and culture tables.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+            },
+        },
     ]
 
 
@@ -256,13 +307,60 @@ def handle_tool_call(tool_name: str, arguments: dict) -> str:
             arguments["company_name"],
             arguments.get("top_k", 3),
         )
+    elif tool_name == "list_techjob_tables_tool":
+        result = list_techjob_tables()
     else:
         result = {"error": f"Unknown tool: {tool_name}"}
 
     return json.dumps(result, ensure_ascii=False, default=str)
 
 
-if __name__ == "__main__":
+def create_mcp_server():
+    """Create a real MCP server exposing TechJob AI tools.
+
+    The functions above remain importable for the in-process LangGraph agent,
+    while this wrapper exposes the same capabilities through the standard
+    Model Context Protocol. External MCP clients can run this module over stdio
+    and discover/call the tools without importing project internals.
+    """
+    try:
+        from mcp.server.fastmcp import FastMCP
+    except ImportError as exc:
+        raise RuntimeError(
+            "The 'mcp' package is required to run the MCP server. "
+            "Install data-pipeline/requirements.txt first."
+        ) from exc
+
+    mcp = FastMCP("techjob-ai")
+
+    @mcp.tool()
+    def execute_sql_tool(sql: str) -> dict:
+        """Execute a read-only SQL SELECT/WITH query against the TechJob AI warehouse.
+
+        Dangerous SQL statements are blocked, the database session is read-only,
+        and results are capped to prevent oversized tool responses.
+        """
+        return execute_sql(sql)
+
+    @mcp.tool()
+    def execute_rag_culture_tool(company_name: str, top_k: int = 3) -> dict:
+        """Retrieve company culture/work-environment snippets using semantic search."""
+        return execute_rag_culture(company_name=company_name, top_k=top_k)
+
+    @mcp.tool()
+    def list_techjob_tables_tool() -> dict:
+        """List the main tables and marts the agent is expected to query."""
+        return list_techjob_tables()
+
+    return mcp
+
+
+def run_mcp_server() -> None:
+    """Run TechJob AI MCP server over stdio."""
+    create_mcp_server().run()
+
+
+def _run_self_test() -> None:
     # Self-test mode
     print("=== MCP Server Self-Test ===")
 
@@ -282,3 +380,10 @@ if __name__ == "__main__":
     print(json.dumps(result, indent=2))
 
     print("\n=== All tests passed ===")
+
+
+if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        _run_self_test()
+    else:
+        run_mcp_server()

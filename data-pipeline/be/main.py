@@ -232,6 +232,41 @@ def get_chat_history(session_id: str):
     return {"session_id": session_id, "messages": history}
 
 
+@app.get("/api/skills")
+def list_agent_skills():
+    """List project skill playbooks loaded by the AI agent."""
+    from ai.skills import load_skills
+    return {
+        "data": [
+            {
+                "slug": skill.slug,
+                "name": skill.name,
+                "description": skill.description,
+                "triggers": list(skill.triggers),
+            }
+            for skill in load_skills()
+        ]
+    }
+
+
+@app.get("/api/skills/match")
+def match_agent_skills(q: str = Query(..., min_length=1, max_length=500)):
+    """Return skill playbooks that match a user query."""
+    from ai.skills import select_skills
+    return {
+        "query": q,
+        "data": [
+            {
+                "slug": skill.slug,
+                "name": skill.name,
+                "description": skill.description,
+                "triggers": list(skill.triggers),
+            }
+            for skill in select_skills(q)
+        ],
+    }
+
+
 @app.post("/api/predict-salary")
 def predict_salary(
     title: str = Query(..., min_length=2, max_length=200),
