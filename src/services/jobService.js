@@ -35,7 +35,7 @@ export function normalizeJob(job) {
 
   return {
     ...job,
-    id: String(job.id ?? job.source_id),
+    id: String(job.id ?? job.source_id ?? job.job_id),
     title: job.title,
     company,
     companyInitial: company.charAt(0).toUpperCase(),
@@ -47,6 +47,12 @@ export function normalizeJob(job) {
     salaryMax,
     salaryRaw: salaryMin == null && salaryMax == null ? 'Thỏa thuận' : null,
     salaryDisplay: job.salaryDisplay ?? formatSalary(salaryMin, salaryMax),
+    description: job.description ?? job.job_description ?? '',
+    job_description: job.job_description ?? job.description ?? '',
+    job_requirement: job.job_requirement ?? '',
+    benefits: Array.isArray(job.benefits)
+      ? job.benefits.map(b => typeof b === 'string' ? b : (b.benefitNameVI || b.benefitName || b.benefitValue || '')).filter(Boolean)
+      : typeof job.benefits === 'string' ? [job.benefits] : [],
     skills,
     requiredSkills: job.requiredSkills ?? skills,
     postedDate: job.postedDate ?? (
@@ -89,7 +95,7 @@ export async function getJobById(id) {
     return job
   }
   const { data } = await api.get(`/jobs/${id}`)
-  return data
+  return normalizeJob(data)
 }
 
 /**

@@ -21,12 +21,12 @@ from ai.observability import log_ai_event, timed_ai_event
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(ENV_PATH)
 
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_USER = os.getenv("POSTGRES_USER", "techjob")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "techjob123")
-DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
-DB_SSLMODE = os.getenv("PGSSLMODE", "prefer")
+DB_HOST = os.getenv("NEON_HOST", os.getenv("POSTGRES_HOST", "localhost"))
+DB_PORT = os.getenv("NEON_PORT", os.getenv("POSTGRES_PORT", "5432"))
+DB_USER = os.getenv("NEON_USER", os.getenv("POSTGRES_USER", "techjob"))
+DB_PASS = os.getenv("NEON_PASSWORD", os.getenv("POSTGRES_PASSWORD", "techjob123"))
+DB_NAME = os.getenv("NEON_DB", os.getenv("POSTGRES_DB", "techjob_ai"))
+DB_SSLMODE = "require" if os.getenv("NEON_HOST") else os.getenv("PGSSLMODE", "prefer")
 
 # Model for semantic search (cached globally)
 _search_model = None
@@ -52,6 +52,24 @@ app = FastAPI(
     description="IT Job Market Analytics, Semantic Search, AI Agent Chat, Salary Prediction & Cover Letter Generation",
     version="2.0.0",
 )
+from psycopg2 import pool
+from fastapi import Depends
+db_pool = None
+
+@app.on_event("startup")
+def startup():
+    global db_pool
+    db_pool = pool.SimpleConnectionPool(1, 20, host=DB_HOST, port=int(DB_PORT), user=DB_USER, password=DB_PASS, dbname=DB_NAME, sslmode=DB_SSLMODE)
+
+@app.on_event("shutdown")
+def shutdown():
+    if db_pool: db_pool.closeall()
+
+def get_db():
+    conn = db_pool.getconn()
+    try: yield conn
+    finally: db_pool.putconn(conn)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -70,13 +88,13 @@ if STATIC_DIR.exists():
 # ============================================================
 
 @app.get("/")
-def root():
+def root(conn = Depends(get_db)):
     """Redirect to frontend UI."""
     return RedirectResponse(url="/static/index.html")
 
 
 @app.get("/api/health/ai")
-def ai_health():
+def ai_health(conn = Depends(get_db)):
     """Lightweight AI system health without calling the LLM or database."""
     from ai.skills import load_skills
     from be.mcp_server import get_tool_definitions
@@ -92,7 +110,7 @@ def ai_health():
 
 
 @app.get("/api/health/schema")
-def schema_health():
+def schema_health(conn = Depends(get_db)):
     """Check whether key warehouse objects are reachable."""
     required_tables = [
         "warehouse_warehouse.fact_job_postings",
@@ -102,7 +120,6 @@ def schema_health():
         "warehouse_marts.mart_salary_benchmark",
     ]
 
-    conn = get_conn()
     cur = conn.cursor()
     results = {}
     for table in required_tables:
@@ -118,8 +135,6 @@ def schema_health():
         )
         results[table] = bool(cur.fetchone()[0])
     cur.close()
-    conn.close()
-
     return {
         "status": "ok" if all(results.values()) else "degraded",
         "tables": results,
@@ -127,21 +142,26 @@ def schema_health():
 
 
 @app.get("/api/stats")
-def get_stats():
+def get_stats(conn = Depends(get_db)):
     """Dashboard overview stats."""
-    conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("""
-        SELECT 
-            (SELECT COUNT(*) FROM warehouse_warehouse.fact_job_postings) as total_jobs,
-            (SELECT COUNT(*) FROM warehouse_warehouse.dim_location) as total_cities,
-            (SELECT COUNT(*) FROM warehouse_warehouse.dim_skill) as total_skills,
-            (SELECT COUNT(*) FROM warehouse_warehouse.dim_company) as total_companies;
-    """)
-    row = cur.fetchone()
+
+    cur.execute("SELECT SUM(job_count) as total_jobs, COUNT(city_id) as total_cities FROM warehouse_marts.mart_location_demand;")
+    row1 = cur.fetchone()
+
+    cur.execute("SELECT COUNT(*) as total_skills FROM warehouse_warehouse.dim_skill;")
+    row2 = cur.fetchone()
+
+    cur.execute("SELECT COUNT(*) as total_companies FROM warehouse_warehouse.dim_company;")
+    row3 = cur.fetchone()
+
     cur.close()
-    conn.close()
-    return dict(row) if row else {}
+
+    result = dict(row1) if row1 else {}
+    if row2: result.update(row2)
+    if row3: result.update(row3)
+
+    return result
 
 
 @app.get("/api/jobs")
@@ -150,9 +170,9 @@ def get_jobs(
     size: int = Query(20, ge=1, le=100),
     keyword: str = Query("", max_length=100),
     salary_band: str = Query("", max_length=50),
+    conn = Depends(get_db)
 ):
     """List jobs with pagination and filters."""
-    conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     offset = (page - 1) * size
@@ -220,15 +240,104 @@ def get_jobs(
     )
     jobs = cur.fetchall()
     cur.close()
-    conn.close()
 
-    return {"total": total, "page": page, "size": size, "data": jobs}
+    from ai.salary_predictor import predict_hidden_salary
+    results = []
+    for job in jobs:
+        d = dict(job)
+        if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
+            pred = predict_hidden_salary(
+                title=d.get("title", ""),
+                city=d.get("primary_city", ""),
+                level=d.get("job_level_vi", ""),
+                work_mode=d.get("work_mode", ""),
+                skills=d.get("skills", "") or ""
+            )
+            if pred:
+                d["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
+        results.append(d)
 
+    return {"total": total, "page": page, "size": size, "data": results}
+
+
+@app.get("/api/jobs/{job_id}")
+def get_job_by_id(job_id: int, conn = Depends(get_db)):
+    """Get detailed information for a single job posting."""
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    query = """
+        SELECT f.job_id AS source_id, f.job_title AS title, c.company_name, 
+               (f.working_locations->0->>'cityNameVI') AS primary_city, 
+               f.working_locations,
+               f.salary_min AS salary_min_vnd, f.salary_max AS salary_max_vnd, 
+               jl.level_name_vi AS job_level_vi,
+               f.job_description,
+               f.job_requirement,
+               f.benefits,
+               f.skills,
+               f.created_on AS posted_date,
+               CONCAT('https://www.vietnamworks.com/-', f.job_id, '-jv') AS source_url
+        FROM warehouse_warehouse.fact_job_postings f
+        LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+        LEFT JOIN warehouse_warehouse.dim_job_level jl ON f.job_level_id = jl.job_level_id
+        WHERE f.job_id = %s
+    """
+    cur.execute(query, [job_id])
+    job = cur.fetchone()
+    cur.close()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+        
+    return job
+
+@app.get("/api/jobs/{job_id}/related")
+def get_related_jobs(job_id: int, limit: int = Query(3, ge=1, le=10), conn = Depends(get_db)):
+    """Get related jobs using pgvector semantic similarity."""
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    
+    cur.execute("SELECT embedding FROM warehouse_warehouse.job_embeddings WHERE job_id = %s", [job_id])
+    row = cur.fetchone()
+    
+    if not row or row["embedding"] is None:
+        query = """
+            SELECT f.job_id AS source_id, f.job_title AS title, c.company_name, 
+                   (f.working_locations->0->>'cityNameVI') AS primary_city, 
+                   f.salary_min AS salary_min_vnd, f.salary_max AS salary_max_vnd, jl.level_name_vi AS job_level_vi,
+                   CONCAT('https://www.vietnamworks.com/-', f.job_id, '-jv') AS source_url
+            FROM warehouse_warehouse.fact_job_postings f
+            LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+            LEFT JOIN warehouse_warehouse.dim_job_level jl ON f.job_level_id = jl.job_level_id
+            WHERE f.job_id != %s 
+              AND f.job_level_id = (SELECT job_level_id FROM warehouse_warehouse.fact_job_postings WHERE job_id = %s)
+            LIMIT %s
+        """
+        cur.execute(query, [job_id, job_id, limit])
+        jobs = cur.fetchall()
+        cur.close()
+        return {"data": jobs, "method": "fallback_level"}
+
+    vec_str = row["embedding"]
+    query = """
+        SELECT f.job_id AS source_id, f.job_title AS title, c.company_name, 
+               (f.working_locations->0->>'cityNameVI') AS primary_city, 
+               f.salary_min AS salary_min_vnd, f.salary_max AS salary_max_vnd, jl.level_name_vi AS job_level_vi,
+               CONCAT('https://www.vietnamworks.com/-', f.job_id, '-jv') AS source_url,
+               1 - (e.embedding <=> %s::vector) AS similarity
+        FROM warehouse_warehouse.fact_job_postings f
+        JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
+        LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+        LEFT JOIN warehouse_warehouse.dim_job_level jl ON f.job_level_id = jl.job_level_id
+        WHERE f.job_id != %s AND e.embedding IS NOT NULL
+        ORDER BY e.embedding <=> %s::vector
+        LIMIT %s
+    """
+    cur.execute(query, [vec_str, job_id, vec_str, limit])
+    jobs = cur.fetchall()
+    cur.close()
+    return {"data": jobs, "method": "semantic"}
 
 @app.get("/api/top-skills")
-def get_top_skills(limit: int = Query(20, ge=1, le=50)):
+def get_top_skills(limit: int = Query(20, ge=1, le=200), conn = Depends(get_db)):
     """Top skills by job count."""
-    conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         "SELECT skill_name, SUM(job_count) AS total_jobs FROM warehouse_marts.mart_skill_demand GROUP BY skill_name ORDER BY total_jobs DESC LIMIT %s;",
@@ -236,26 +345,24 @@ def get_top_skills(limit: int = Query(20, ge=1, le=50)):
     )
     rows = cur.fetchall()
     cur.close()
-    conn.close()
     return {"data": rows}
 
 
 @app.get("/api/salary-by-title")
-def get_salary_by_title():
+def get_salary_by_title(conn = Depends(get_db)):
     """Average salary by job category."""
-    conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("SELECT skill_name, level_name_vi, median_salary_min, median_salary_max, sample_size FROM warehouse_marts.mart_salary_benchmark ORDER BY sample_size DESC LIMIT 50;")
     rows = cur.fetchall()
     cur.close()
-    conn.close()
     return {"data": rows}
 
 
 @app.get("/api/search")
 def semantic_search(
     q: str = Query(..., min_length=2, max_length=200),
-    limit: int = Query(10, ge=1, le=50),
+    limit: int = Query(10, ge=1, le=200),
+    conn = Depends(get_db)
 ):
     """Semantic search using pgvector cosine similarity via job_embeddings table (M10)."""
     m = get_model()
@@ -263,7 +370,6 @@ def semantic_search(
     query_vec = m.encode(q, normalize_embeddings=True).tolist()
     vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
 
-    conn = get_conn()
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """SELECT f.job_id AS source_id, f.job_title AS title, c.company_name,
@@ -291,51 +397,75 @@ def semantic_search(
     )
     rows = cur.fetchall()
     cur.close()
-    conn.close()
 
-    return {"query": q, "results": rows}
+    from ai.salary_predictor import predict_hidden_salary
+    results = []
+    for row in rows:
+        d = dict(row)
+        if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
+            pred = predict_hidden_salary(
+                title=d.get("title", ""),
+                city=d.get("primary_city", ""),
+                level=d.get("job_level_vi", ""),
+                work_mode=d.get("work_mode", ""),
+                skills=d.get("skills", "") or ""
+            )
+            if pred:
+                d["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
+        results.append(d)
+
+    return {"query": q, "results": results}
 
 
 @app.get("/api/jobs-by-level")
-def get_jobs_by_level():
-    conn = get_conn()
+def get_jobs_by_level(conn = Depends(get_db)):
+    """Job count by seniority level."""
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT l.level_name_vi, COUNT(*) as job_count
-        FROM warehouse_warehouse.fact_job_postings f
-        JOIN warehouse_warehouse.dim_job_level l ON f.job_level_id = l.job_level_id
-        GROUP BY 1 ORDER BY 2 DESC
+        SELECT lvl.level_name_vi, lvl.seniority_order, COUNT(*) AS job_count
+        FROM warehouse_warehouse.fact_job_postings AS f
+        LEFT JOIN warehouse_warehouse.dim_job_level AS lvl USING (job_level_id)
+        GROUP BY lvl.level_name_vi, lvl.seniority_order
+        ORDER BY lvl.seniority_order;
     """)
     rows = cur.fetchall()
     cur.close()
-    conn.close()
     return {"data": rows}
 
 
 @app.get("/api/locations")
-def get_locations():
-    conn = get_conn()
+def get_locations(conn = Depends(get_db)):
+    """Job count distribution by city for Pie Chart."""
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
-    cur.execute("SELECT city_name_vi, job_count FROM warehouse_marts.mart_location_demand ORDER BY job_count DESC LIMIT 10;")
+    cur.execute("""
+        SELECT l.city_name_vi, m.job_count
+        FROM warehouse_marts.mart_location_demand m
+        JOIN warehouse_warehouse.dim_location l ON m.city_id = l.city_id
+        ORDER BY m.job_count DESC;
+    """)
     rows = cur.fetchall()
     cur.close()
-    conn.close()
     return {"data": rows}
 
 
 @app.get("/api/skill-trends")
-def get_skill_trends():
-    """Monthly skill hiring trends."""
-    conn = get_conn()
+def get_skill_trends(conn = Depends(get_db)):
+    """Monthly trend for top 5 hottest skills."""
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute("""
-        SELECT date_trunc('month', week_start)::date::text as month, skill_name, sum(job_count) as job_count 
-        FROM warehouse_marts.mart_skill_demand 
-        GROUP BY 1, 2 ORDER BY 1, 3 DESC
+        WITH top_skills AS (
+            SELECT skill_id FROM warehouse_marts.mart_skill_demand
+            GROUP BY skill_id ORDER BY SUM(job_count) DESC LIMIT 5
+        )
+        SELECT s.skill_name, DATE_TRUNC('month', m.week_start)::DATE AS month, SUM(m.job_count) AS job_count
+        FROM warehouse_marts.mart_skill_demand m
+        JOIN warehouse_warehouse.dim_skill s ON m.skill_id = s.skill_id
+        WHERE m.skill_id IN (SELECT skill_id FROM top_skills)
+        GROUP BY s.skill_name, month
+        ORDER BY month, s.skill_name;
     """)
     rows = cur.fetchall()
     cur.close()
-    conn.close()
     return {"data": rows}
 
 
@@ -347,6 +477,7 @@ def get_skill_trends():
 async def agent_chat(
     message: str = Query(..., min_length=1, max_length=1000),
     session_id: str = Query("default", max_length=100),
+    conn = Depends(get_db)
 ):
     """Chat with TechJob AI Agent (ReAct Agent powered by Groq LLaMA)."""
     with timed_ai_event("api.chat", session_id=session_id, message_chars=len(message)):
@@ -372,7 +503,7 @@ async def agent_chat(
 
 
 @app.get("/api/chat/history/{session_id}")
-def get_chat_history(session_id: str):
+def get_chat_history(session_id: str, conn = Depends(get_db)):
     """Get chat history for a session."""
     from ai.agent import get_chat_history
     history = get_chat_history(session_id)
@@ -380,7 +511,7 @@ def get_chat_history(session_id: str):
 
 
 @app.get("/api/skills")
-def list_agent_skills():
+def list_agent_skills(conn = Depends(get_db)):
     """List project skill playbooks loaded by the AI agent."""
     from ai.skills import load_skills
     return {
@@ -397,7 +528,7 @@ def list_agent_skills():
 
 
 @app.get("/api/skills/match")
-def match_agent_skills(q: str = Query(..., min_length=1, max_length=500)):
+def match_agent_skills(q: str = Query(..., min_length=1, max_length=500), conn = Depends(get_db)):
     """Return skill playbooks that match a user query."""
     from ai.skills import select_skills
     return {
@@ -421,6 +552,7 @@ def predict_salary(
     level: str = Query("unknown", max_length=50),
     work_mode: str = Query("unknown", max_length=20),
     skills: str = Query("", max_length=500),
+    conn = Depends(get_db)
 ):
     """Predict salary range for a job with hidden/negotiable salary.
     Uses RandomForestRegressor trained on real job data. Label: 'AI Predicted'."""
@@ -436,6 +568,7 @@ async def generate_cover_letter_endpoint(
     company_name: str = Form("Company", description="Company Name"),
     job_description: str = Form("", description="Job Description text"),
     language: str = Form("Tiếng Việt", description="Output language"),
+    conn = Depends(get_db)
 ):
     """Generate a personalized cover letter from CV (PDF) + Job Description."""
     from ai.cover_letter import generate_cover_letter, parse_cv_pdf, detect_cv_language
@@ -493,8 +626,6 @@ async def generate_cover_letter_endpoint(
     )
     job = cur.fetchone()
     cur.close()
-    conn.close()
-
     if not job:
         return {"error": f"Job ID {job_id} not found in database."}
 
@@ -507,7 +638,6 @@ def _legacy_build_embeddings_disabled(batch_size: int = Query(8, ge=1, le=64)):
     Reuses the model already loaded in memory — no extra RAM needed."""
     model = get_model()
 
-    conn = get_conn()
     cur = conn.cursor()
 
     # Ensure table exists
@@ -539,7 +669,6 @@ def _legacy_build_embeddings_disabled(batch_size: int = Query(8, ge=1, le=64)):
 
     if not jobs:
         cur.close()
-        conn.close()
         return {"status": "ok", "message": "All jobs already have embeddings", "processed": 0}
 
     total = 0
@@ -578,10 +707,9 @@ def _legacy_build_embeddings_disabled(batch_size: int = Query(8, ge=1, le=64)):
         total += len(ids)
 
     cur.close()
-    conn.close()
     return {"status": "ok", "processed": total, "total_jobs": len(jobs)}
 @app.post("/api/train-salary-model")
-def train_salary_model():
+def train_salary_model(conn = Depends(get_db)):
     """Retrain the salary prediction model with latest data (admin endpoint)."""
     from ai.salary_predictor import train
     result = train()
@@ -597,12 +725,11 @@ def train_salary_model():
 
 
 @app.post("/api/build-embeddings")
-def build_embeddings(batch_size: int = Query(8, ge=1, le=64)):
+def build_embeddings(batch_size: int = Query(8, ge=1, le=64), conn = Depends(get_db)):
     """Build embeddings for jobs missing from job_embeddings table.
     Reuses the model already loaded in memory — no extra RAM needed."""
     model = get_model()
 
-    conn = get_conn()
     cur = conn.cursor()
 
     # Ensure table exists
@@ -634,7 +761,6 @@ def build_embeddings(batch_size: int = Query(8, ge=1, le=64)):
 
     if not jobs:
         cur.close()
-        conn.close()
         return {"status": "ok", "message": "All jobs already have embeddings", "processed": 0}
 
     total = 0
@@ -673,6 +799,5 @@ def build_embeddings(batch_size: int = Query(8, ge=1, le=64)):
         total += len(ids)
 
     cur.close()
-    conn.close()
     return {"status": "ok", "processed": total, "total_jobs": len(jobs)}
 

@@ -138,8 +138,7 @@ export default function JobList() {
   const [filters, setFilters]   = useState({ locations: [], levels: [], types: [], salaryKey: 'Tất cả' })
   const [showFilter, setShowFilter] = useState(false)
   const [page, setPage]         = useState(1)
-  const [searchLimit, setSearchLimit] = useState(30)
-  const PAGE_SIZE = 6
+  const PAGE_SIZE = 12
 
   useEffect(() => {
     setLoading(true)
@@ -147,7 +146,7 @@ export default function JobList() {
     let cancelled = false
 
     if (!queryParam.trim()) {
-      getJobs({ size: searchLimit })
+      getJobs({ size: 50 })
         .then(result => {
           if (!cancelled) {
             setSearchResults(result.data || [])
@@ -163,7 +162,7 @@ export default function JobList() {
       return () => { cancelled = true }
     }
 
-    searchJobsSemantic(queryParam.trim(), searchLimit)
+    searchJobsSemantic(queryParam.trim(), 50)
       .then(result => {
         if (!cancelled) {
           const results = result.data || []
@@ -189,7 +188,7 @@ export default function JobList() {
       })
 
     return () => { cancelled = true }
-  }, [queryParam, setJobs, searchLimit])
+  }, [queryParam, setJobs])
 
   const salaryRange = SALARY_RANGES.find(r => r.label === filters.salaryKey) || SALARY_RANGES[0]
 
@@ -275,26 +274,11 @@ export default function JobList() {
                 <><span className="font-semibold text-text-primary">{filtered.length}</span> kết quả{queryParam && <> cho &ldquo;<span className="text-violet">{queryParam}</span>&rdquo;</>}</>
               )}
             </p>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-text-muted">Số kết quả:</span>
-                <select 
-                  value={searchLimit} 
-                  onChange={e => setSearchLimit(Number(e.target.value))}
-                  className="text-xs px-2 py-1 border border-gray-200 rounded focus:outline-none focus:border-violet"
-                >
-                  <option value={10}>10</option>
-                  <option value={30}>30</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-              </div>
-              {activeCount > 0 && (
-                <button onClick={clearFilters} className="text-xs text-red-500 hover:underline">
-                  Xoá bộ lọc ({activeCount})
-                </button>
-              )}
-            </div>
+            {activeCount > 0 && (
+              <button onClick={clearFilters} className="text-xs text-red-500 hover:underline">
+                Xoá bộ lọc ({activeCount})
+              </button>
+            )}
           </div>
 
           {/* Job cards grid */}

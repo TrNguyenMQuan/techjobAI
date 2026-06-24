@@ -122,7 +122,7 @@ export default function JobCard({ job, compact = false }) {
       {job.aiEstimatedSalary && (showAIEstimate || !compact) && (
         <div className="mb-3">
           <AIBadge variant="mint">
-            🤖 AI Estimated: ~${job.aiEstimatedSalary.toLocaleString()}
+            🤖 AI Dự đoán: ~ {job.aiEstimatedSalary.toLocaleString('vi-VN')} VND
           </AIBadge>
         </div>
       )}

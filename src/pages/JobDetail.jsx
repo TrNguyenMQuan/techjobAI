@@ -5,7 +5,8 @@ import {
   ChevronRight, Bot, Calendar, Users, Briefcase,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { MOCK_JOBS } from '../data/mockData'
+import { getJobById, getRelatedJobs } from '../services/jobService'
+import { normalizeJob } from '../services/jobService'
 import {
   Button, AIBadge, SkillTag, Card, Skeleton,
 } from '../components/ui'
@@ -28,17 +29,59 @@ export default function JobDetail() {
   const { jobs, toggleSaved } = useApp()
 
   const [loading, setLoading] = useState(true)
-  const job = jobs.find(j => j.id === id)
+  const [job, setJob] = useState(null)
+  const [related, setRelated] = useState([])
+  const [salaryPrediction, setSalaryPrediction] = useState(null)
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 600)
-    return () => clearTimeout(t)
-  }, [id])
+    setLoading(true)
+    setJob(null)
+    setRelated([])
+    setSalaryPrediction(null)
 
-  // Related jobs — same level, different id
-  const related = MOCK_JOBS
-    .filter(j => j.id !== id && (j.level === job?.level || j.skills?.some(s => job?.skills?.includes(s))))
-    .slice(0, 3)
+    // Try to find the job in the in-memory store first (instant)
+    const cached = jobs.find(j => j.id === id)
+    
+    // Always fetch from API for full details
+    getJobById(id)
+      .then(data => {
+        const normalized = normalizeJob(data)
+        setJob(normalized)
+        
+        // Fetch salary prediction if salary is negotiable
+        if (normalized.salaryRaw === 'Thỏa thuận') {
+          import('../services/api').then(({ api }) => {
+            const skills = Array.isArray(normalized.skills) ? normalized.skills.join(',') : ''
+            api.post('/predict-salary', null, {
+              params: {
+                title: normalized.title,
+                city: normalized.location || 'unknown',
+                level: normalized.level || 'unknown',
+                work_mode: normalized.type || 'unknown',
+                skills,
+              }
+            }).then(res => {
+              if (res.data && !res.data.error) {
+                setSalaryPrediction(res.data)
+              }
+            }).catch(() => {})
+          })
+        }
+      })
+      .catch(() => {
+        // Fallback to cached data if API fails
+        if (cached) setJob(cached)
+      })
+      .finally(() => setLoading(false))
+
+    // Fetch related jobs from API
+    getRelatedJobs(id)
+      .then(data => {
+        const items = data?.data || data || []
+        setRelated(Array.isArray(items) ? items.map(normalizeJob) : [])
+      })
+      .catch(() => setRelated([]))
+  }, [id, jobs])
 
   if (!loading && !job) {
     return (
@@ -80,7 +123,7 @@ export default function JobDetail() {
                     <p className="text-sm text-violet font-medium mt-0.5">{job.company}</p>
                     <div className="flex flex-wrap gap-3 mt-2">
                       <span className="flex items-center gap-1 text-xs text-text-secondary"><MapPin size={12} />{job.location}</span>
-                      <span className="flex items-center gap-1 text-xs text-text-secondary"><Briefcase size={12} />{job.type}</span>
+                      {job.type && <span className="flex items-center gap-1 text-xs text-text-secondary"><Briefcase size={12} />{job.type}</span>}
                       <span className="flex items-center gap-1 text-xs text-text-secondary"><Clock size={12} />Đăng {job.postedDate}</span>
                     </div>
                   </div>
@@ -89,10 +132,16 @@ export default function JobDetail() {
                 {/* Salary */}
                 <div className="flex items-center flex-wrap gap-3">
                   <div className="text-lg font-bold text-text-primary">
-                    {job.salaryRaw === 'Thỏa thuận' ? 'Thỏa thuận' : `Up to ${job.salaryDisplay}`}
+                    {job.salaryRaw === 'Thỏa thuận' ? 'Thỏa thuận' : job.salaryDisplay}
                     <span className="text-xs font-normal text-text-muted ml-1">/month</span>
                   </div>
-                  {job.aiEstimatedSalary && (
+                  {salaryPrediction && (
+                    <AIBadge variant="mint">
+                      <Bot size={11} />
+                      ~{Number(salaryPrediction.predicted_min || 0).toLocaleString('vi-VN')} – {Number(salaryPrediction.predicted_max || 0).toLocaleString('vi-VN')} VND (AI)
+                    </AIBadge>
+                  )}
+                  {job.aiEstimatedSalary && !salaryPrediction && (
                     <AIBadge variant="mint">
                       <Bot size={11} />
                       ~${job.aiEstimatedSalary.toLocaleString()} ESTIMATED
@@ -105,19 +154,28 @@ export default function JobDetail() {
               {/* About the role */}
               <Card className="p-6 mb-5">
                 <h2 className="text-base font-semibold text-text-primary mb-3">About the Role</h2>
-                <p className="text-sm text-text-secondary leading-relaxed whitespace-pre-line">{job.description}</p>
+                <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line"
+                  dangerouslySetInnerHTML={{ __html: job.description || job.job_description || 'Chưa có mô tả chi tiết.' }}
+                />
 
-                {job.responsibilities?.length > 0 && (
+                {/* Job Requirements */}
+                {(job.job_requirement || job.responsibilities?.length > 0) && (
                   <>
-                    <h3 className="text-sm font-semibold text-text-primary mt-5 mb-2">Key Responsibilities</h3>
-                    <ul className="space-y-2">
-                      {job.responsibilities.map((r, i) => (
-                        <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
-                          <span className="w-1.5 h-1.5 rounded-full bg-violet mt-1.5 shrink-0" />
-                          {r}
-                        </li>
-                      ))}
-                    </ul>
+                    <h3 className="text-sm font-semibold text-text-primary mt-5 mb-2">Requirements</h3>
+                    {job.responsibilities?.length > 0 ? (
+                      <ul className="space-y-2">
+                        {job.responsibilities.map((r, i) => (
+                          <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
+                            <span className="w-1.5 h-1.5 rounded-full bg-violet mt-1.5 shrink-0" />
+                            {r}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line"
+                        dangerouslySetInnerHTML={{ __html: job.job_requirement || '' }}
+                      />
+                    )}
                   </>
                 )}
               </Card>
@@ -128,7 +186,7 @@ export default function JobDetail() {
                 <div className="mb-4">
                   <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Required Skills</p>
                   <div className="flex flex-wrap gap-2">
-                    {job.requiredSkills?.map(s => <SkillTag key={s} variant="required">{s}</SkillTag>)}
+                    {(job.requiredSkills || job.skills || []).map(s => <SkillTag key={s} variant="required">{s}</SkillTag>)}
                   </div>
                 </div>
                 {job.preferredSkills?.length > 0 && (
@@ -142,31 +200,33 @@ export default function JobDetail() {
               </Card>
 
               {/* Benefits */}
-              {job.benefits?.length > 0 && (
+              {job.benefits && (typeof job.benefits === 'string' ? job.benefits.length > 0 : job.benefits?.length > 0) && (
                 <Card className="p-6 mb-5">
                   <h2 className="text-base font-semibold text-text-primary mb-3">Benefits</h2>
-                  <div className="flex flex-wrap gap-2">
-                    {job.benefits.map(b => (
-                      <span key={b} className="text-xs px-3 py-1.5 bg-mint-bg text-mint-dark rounded-full font-medium">✓ {b}</span>
-                    ))}
-                  </div>
+                  {typeof job.benefits === 'string' ? (
+                    <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line"
+                      dangerouslySetInnerHTML={{ __html: job.benefits }}
+                    />
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {job.benefits.map(b => (
+                        <span key={b} className="text-xs px-3 py-1.5 bg-mint-bg text-mint-dark rounded-full font-medium">✓ {b}</span>
+                      ))}
+                    </div>
+                  )}
                 </Card>
               )}
 
               {/* Meta */}
               <Card className="p-5 mb-5">
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-2xs text-text-muted uppercase tracking-wider mb-1">Hạn nộp</p>
-                    <p className="text-sm font-medium text-text-primary flex items-center gap-1"><Calendar size={12} />{job.deadline}</p>
-                  </div>
-                  <div>
-                    <p className="text-2xs text-text-muted uppercase tracking-wider mb-1">Số lượng</p>
-                    <p className="text-sm font-medium text-text-primary flex items-center gap-1"><Users size={12} />{job.headcount} người</p>
+                    <p className="text-2xs text-text-muted uppercase tracking-wider mb-1">Ngày đăng</p>
+                    <p className="text-sm font-medium text-text-primary flex items-center gap-1"><Calendar size={12} />{job.postedDate || 'N/A'}</p>
                   </div>
                   <div>
                     <p className="text-2xs text-text-muted uppercase tracking-wider mb-1">Nguồn</p>
-                    <p className="text-sm font-medium text-text-primary">{job.source}</p>
+                    <p className="text-sm font-medium text-text-primary">VietnamWorks</p>
                   </div>
                 </div>
               </Card>
@@ -227,16 +287,26 @@ export default function JobDetail() {
                   </div>
                   <div>
                     <p className="text-sm font-medium text-text-primary">{job.company}</p>
-                    <p className="text-xs text-text-secondary">100–500 Employees</p>
+                    <p className="text-xs text-text-secondary">VietnamWorks Employer</p>
                   </div>
                 </div>
                 <p className="text-xs text-text-secondary leading-relaxed mb-3">
                   {job.company} là công ty công nghệ hàng đầu, chuyên phát triển các sản phẩm AI-driven phục vụ doanh nghiệp.
                 </p>
-                <button className="text-xs text-violet hover:underline font-medium">
-                  View Company Profile →
-                </button>
               </Card>
+
+              {/* AI Salary Prediction */}
+              {salaryPrediction && (
+                <Card className="p-5 border-mint/30 bg-mint-bg/30">
+                  <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-1.5">
+                    <Bot size={14} className="text-mint" /> AI Salary Prediction
+                  </h3>
+                  <p className="text-lg font-bold text-mint mb-1">
+                    {Number(salaryPrediction.predicted_min || 0).toLocaleString('vi-VN')} – {Number(salaryPrediction.predicted_max || 0).toLocaleString('vi-VN')} VND
+                  </p>
+                  <p className="text-2xs text-text-muted">Dự đoán bởi mô hình AI dựa trên dữ liệu thị trường</p>
+                </Card>
+              )}
             </div>
           )}
         </div>
@@ -271,7 +341,7 @@ export default function JobDetail() {
                   <div className="w-6 h-6 rounded text-white text-xs font-bold flex items-center justify-center shrink-0" style={{ backgroundColor: j.companyColor }}>{j.companyInitial}</div>
                   <p className="text-xs font-semibold text-text-primary truncate">{j.title}</p>
                 </div>
-                <p className="text-2xs text-text-secondary mb-2">{j.company} · {j.type}</p>
+                <p className="text-2xs text-text-secondary mb-2">{j.company} · {j.location}</p>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-mint">{j.salaryDisplay}</span>
                   <span className="text-2xs text-text-muted">{j.postedDate}</span>

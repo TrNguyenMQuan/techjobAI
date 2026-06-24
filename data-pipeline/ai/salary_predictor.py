@@ -121,13 +121,19 @@ def train():
             SELECT f.job_title AS title,
                    COALESCE(f.working_locations->0->>'city', 'unknown') AS primary_city,
                    COALESCE(l.level_name_vi, 'unknown') AS job_level_vi,
-                   COALESCE(t.type_working_name_vi, 'unknown') AS work_mode,
+                   CASE 
+                       WHEN f.type_working_id = 1 THEN 'Toàn thời gian'
+                       WHEN f.type_working_id = 2 THEN 'Bán thời gian'
+                       WHEN f.type_working_id = 3 THEN 'Hợp đồng'
+                       WHEN f.type_working_id = 4 THEN 'Tự do'
+                       WHEN f.type_working_id = 5 THEN 'Thực tập'
+                       ELSE 'unknown'
+                   END AS work_mode,
                    f.skills::text AS skills_json,
                    f.salary_min AS salary_min_vnd,
                    f.salary_max AS salary_max_vnd
             FROM warehouse_warehouse.fact_job_postings f
             LEFT JOIN warehouse_warehouse.dim_job_level l ON f.job_level_id = l.job_level_id
-            LEFT JOIN warehouse_warehouse.dim_type_working t ON f.type_working_id = t.type_working_id
             WHERE f.salary_min IS NOT NULL
               AND f.salary_max IS NOT NULL
               AND f.salary_min > 0
@@ -273,7 +279,7 @@ def predict_hidden_salary(
         return {"error": str(e)}
 
     title_cat = _categorize_title(title)
-    top_sk = skills if skills else ""
+    top_sk = _extract_top_skills(skills) if skills else ""
 
     X_input = np.array([[title_cat, city, level, work_mode, top_sk]])
 

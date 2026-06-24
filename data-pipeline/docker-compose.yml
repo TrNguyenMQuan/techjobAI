@@ -37,6 +37,7 @@ x-airflow-common:
     - ./dbt_vietnamworks:/opt/airflow/dbt_vietnamworks   # dbt
     - ml_models:/opt/airflow/models                      # ML models
     - airflow_logs:/opt/airflow/logs
+    - ./ai:/opt/airflow/ai              # AI modules
 
   depends_on:
     postgres-airflow:
