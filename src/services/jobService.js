@@ -4,6 +4,59 @@ import { MOCK_JOBS } from '../data/mockData'
 // Flip this to false once the real backend endpoints below exist.
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
+function formatSalary(min, max) {
+  if (min == null && max == null) return 'Thỏa thuận'
+
+  const format = (value) => {
+    const number = Number(value)
+    if (!Number.isFinite(number)) return value
+    if (number >= 100000) return `${(number / 1000000).toLocaleString('vi-VN')} triệu`
+    return `$${number.toLocaleString('en-US')}`
+  }
+
+  if (min == null) return `Tối đa ${format(max)}`
+  if (max == null) return `Từ ${format(min)}`
+  return `${format(min)} – ${format(max)}`
+}
+
+export function normalizeJob(job) {
+  const salaryMin = job.salaryMin ?? job.salary_min_vnd ?? job.salary_min ?? null
+  const salaryMax = job.salaryMax ?? job.salary_max_vnd ?? job.salary_max ?? null
+  const company = job.company ?? job.company_name ?? 'Không rõ công ty'
+  const rawLocation = job.location ?? job.primary_city ?? 'Không rõ'
+  const location = /hồ chí minh|ho chi minh/i.test(rawLocation) ? 'TP.HCM' : rawLocation
+  const skills = Array.isArray(job.skills)
+    ? job.skills
+        .map(skill => typeof skill === 'string' ? skill : skill.skillName || skill.skill_name)
+        .filter(Boolean)
+    : typeof job.skills === 'string'
+      ? job.skills.split(',').map(skill => skill.trim()).filter(Boolean)
+      : []
+
+  return {
+    ...job,
+    id: String(job.id ?? job.source_id),
+    title: job.title,
+    company,
+    companyInitial: company.charAt(0).toUpperCase(),
+    companyColor: '#4338CA',
+    location,
+    type: job.type ?? job.work_mode ?? '',
+    level: job.level ?? job.job_level_vi ?? '',
+    salaryMin,
+    salaryMax,
+    salaryRaw: salaryMin == null && salaryMax == null ? 'Thỏa thuận' : null,
+    salaryDisplay: job.salaryDisplay ?? formatSalary(salaryMin, salaryMax),
+    skills,
+    requiredSkills: job.requiredSkills ?? skills,
+    postedDate: job.postedDate ?? (
+      job.posted_date ? new Date(job.posted_date).toLocaleDateString('vi-VN') : ''
+    ),
+    sourceUrl: job.sourceUrl ?? job.source_url ?? '',
+    saved: Boolean(job.saved),
+  }
+}
+
 /**
  * FR-1 — Tầng 1: Filter & SQL truyền thống.
  * Fetch paginated job list with structured filters.
@@ -17,8 +70,14 @@ export async function getJobs(filters = {}) {
     if (filters.types?.length)     results = results.filter(j => filters.types.includes(j.type))
     return { data: results, total: results.length }
   }
-  const { data } = await api.get('/jobs', { params: filters })
-  return data
+  const params = {
+    page: filters.page || 1,
+    size: filters.size || 20,
+    keyword: filters.keyword || filters.q || '',
+    salary_band: filters.salary_band || '',
+  }
+  const { data } = await api.get('/jobs', { params })
+  return { ...data, data: (data.data || []).map(normalizeJob) }
 }
 
 /** FR-2 — Job detail */
@@ -48,8 +107,12 @@ export async function searchJobsSemantic(query) {
     )
     return { data: results, matchType: 'semantic' }
   }
-  const { data } = await api.get('/jobs/semantic-search', { params: { q: query } })
-  return data
+  const { data } = await api.get('/search', { params: { q: query, limit: 30 } })
+  return {
+    data: (data.results || []).map(normalizeJob),
+    total: data.results?.length || 0,
+    matchType: 'semantic',
+  }
 }
 
 /** Related / similar jobs for the Job Detail page */

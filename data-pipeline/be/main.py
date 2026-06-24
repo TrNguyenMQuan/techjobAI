@@ -191,7 +191,11 @@ def get_jobs(
         f"""SELECT f.job_id::text AS source_id,
                    f.job_title AS title,
                    COALESCE(c.company_name, 'Unknown') AS company_name,
-                   COALESCE(f.working_locations->0->>'city', 'Unknown') AS primary_city,
+                   COALESCE(
+                       f.working_locations->0->>'cityNameVI',
+                       f.working_locations->0->>'cityName',
+                       'Unknown'
+                   ) AS primary_city,
                    CONCAT(COALESCE(f.salary_min::text, 'Negotiable'), ' - ', COALESCE(f.salary_max::text, 'Negotiable')) AS salary_text,
                    f.salary_min AS salary_min_vnd,
                    f.salary_max AS salary_max_vnd,
@@ -203,13 +207,12 @@ def get_jobs(
                        ELSE '70M+'
                    END AS salary_band,
                    COALESCE(l.level_name_vi, 'Unknown') AS job_level_vi,
-                   COALESCE(t.type_working_name_vi, 'Unknown') AS work_mode,
+                   '' AS work_mode,
                    '' AS source_url,
                    f.created_on AS posted_date
             FROM warehouse_warehouse.fact_job_postings f
             LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
             LEFT JOIN warehouse_warehouse.dim_job_level l ON f.job_level_id = l.job_level_id
-            LEFT JOIN warehouse_warehouse.dim_type_working t ON f.type_working_id = t.type_working_id
             {where_clause}
             ORDER BY f.created_on DESC NULLS LAST
             LIMIT %s OFFSET %s""",
@@ -264,12 +267,23 @@ def semantic_search(
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """SELECT f.job_id AS source_id, f.job_title AS title, c.company_name,
-                  COALESCE(f.working_locations->0->>'city', 'Unknown') AS primary_city,
+                  COALESCE(
+                      f.working_locations->0->>'cityNameVI',
+                      f.working_locations->0->>'cityName',
+                      'Unknown'
+                  ) AS primary_city,
+                  f.salary_min AS salary_min_vnd,
+                  f.salary_max AS salary_max_vnd,
                   CONCAT(f.salary_min, ' - ', f.salary_max) AS salary_text,
+                  COALESCE(l.level_name_vi, 'Unknown') AS job_level_vi,
+                  '' AS work_mode,
+                  f.skills,
+                  f.created_on AS posted_date,
                   '' AS salary_band, '' AS source_url,
                   1 - (e.embedding <=> %s::vector) AS similarity
            FROM warehouse_warehouse.fact_job_postings f
            LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+           LEFT JOIN warehouse_warehouse.dim_job_level l ON f.job_level_id = l.job_level_id
            JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
            ORDER BY e.embedding <=> %s::vector
            LIMIT %s;""",

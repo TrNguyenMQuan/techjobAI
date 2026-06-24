@@ -119,7 +119,7 @@ function CVPanel({ hasCV, jobId, onUpload, cvName, cvFile }) {
 
 // ─── Main CoverLetter page ────────────────────────────────────────────────────
 export default function CoverLetter() {
-  const [searchParams]    = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate          = useNavigate()
   const { jobs }          = useApp()
   const jobId             = searchParams.get('jobId')
@@ -129,7 +129,7 @@ export default function CoverLetter() {
   const [cvName, setCvName]         = useState('')
   const [cvFile, setCvFile]         = useState(null)
   const [generating, setGenerating] = useState(false)
-  const [content, setContent]       = useState('Vui lòng tải CV của bạn lên ở khung bên trái để AI có thể phân tích thông tin và viết Cover Letter phù hợp nhất cho vị trí này.')
+  const [content, setContent]       = useState('Vui lòng tải CV ở khung bên trái, sau đó chọn việc làm để AI viết Cover Letter phù hợp.')
   const [copied, setCopied]         = useState(false)
   const [generated, setGenerated]   = useState(false)
 
@@ -137,18 +137,41 @@ export default function CoverLetter() {
     setCvName(file.name)
     setCvFile(file)
     setHasCV(true)
+    setContent(
+      jobId
+        ? `CV đã được tải lên thành công. Bạn có thể tạo Cover Letter cho vị trí ${job?.title || 'đã chọn'}.`
+        : 'CV đã được tải lên thành công. Vui lòng chọn việc làm ở góc trên bên phải để tạo Cover Letter.'
+    )
   }
 
-  // Auto-generate on first load if job is known
+  // Keep the instructions synchronized with the required CV and job inputs.
   useEffect(() => {
-    if (jobId && job && !generated && hasCV) {
-      // We don't auto-generate mock letter anymore to avoid confusion
+    if (generated) return
+
+    if (hasCV && !jobId) {
+      setContent('CV đã được tải lên thành công. Vui lòng chọn việc làm ở góc trên bên phải để tạo Cover Letter.')
+    } else if (!hasCV && jobId) {
+      setContent(`Đã chọn vị trí ${job?.title || ''}. Vui lòng tải CV PDF ở khung bên trái để AI tạo Cover Letter.`)
+    } else if (hasCV && jobId) {
+      setContent(`Đã có đủ CV và thông tin việc làm${job?.title ? ` cho vị trí ${job.title}` : ''}. Nhấn “Tạo với AI” để bắt đầu.`)
     }
-  }, [jobId, job, generated, hasCV])
+  }, [generated, hasCV, jobId, job?.title])
+
+  const handleSelectJob = (selectedJobId) => {
+    if (selectedJobId) {
+      setSearchParams({ jobId: selectedJobId })
+    } else {
+      setSearchParams({})
+    }
+  }
 
   const handleGenerate = async () => {
     if (!jobId) {
-      alert('Vui lòng chọn việc làm trước khi tạo Cover Letter!')
+      setContent('Vui lòng chọn việc làm trước khi tạo Cover Letter.')
+      return
+    }
+    if (!cvFile) {
+      setContent('Vui lòng tải CV PDF trước khi tạo Cover Letter.')
       return
     }
     setGenerating(true)
@@ -169,13 +192,7 @@ export default function CoverLetter() {
       // cover letter in that same language.
       formData.append('language', 'Auto')
 
-      if (cvFile) {
-        formData.append('cv_file', cvFile)
-      } else {
-        // Create dummy pdf to pass backend validation if user didn't upload
-        const dummyPdf = new Blob(['Dummy CV content'], { type: 'application/pdf' })
-        formData.append('cv_file', dummyPdf, 'dummy.pdf')
-      }
+      formData.append('cv_file', cvFile)
 
       const res = await api.post('/cover-letter', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -231,11 +248,24 @@ export default function CoverLetter() {
           <h1 className="text-base font-bold text-text-primary">Cover Letter</h1>
           {job && <p className="text-xs text-text-secondary">Đang tạo cho: <span className="text-violet font-medium">{job.title}</span> · {job.company}</p>}
         </div>
-        {!jobId && (
+        <div className="flex items-center gap-2">
+          <select
+            value={jobId || ''}
+            onChange={e => handleSelectJob(e.target.value)}
+            aria-label="Chọn việc làm để tạo Cover Letter"
+            className="max-w-xs rounded-lg border border-indigo/30 bg-white px-3 py-2 text-xs text-indigo focus:outline-none focus:ring-2 focus:ring-violet/20"
+          >
+            <option value="">Chọn việc làm...</option>
+            {jobs.map(item => (
+              <option key={item.id} value={item.id}>
+                {item.title} · {item.company}
+              </option>
+            ))}
+          </select>
           <Button variant="secondary" size="sm" onClick={() => navigate('/jobs')}>
-            ← Chọn việc làm
+            Xem danh sách
           </Button>
-        )}
+        </div>
       </div>
 
       {/* Split view — stacks vertically on mobile per spec (CV trên, editor dưới) */}
@@ -306,7 +336,7 @@ export default function CoverLetter() {
             >
               {generating
                 ? <><RefreshCw size={13} className="animate-spin" /> Đang tạo...</>
-                : <><Sparkles size={13} /> Tạo lại với AI</>
+                : <><Sparkles size={13} /> {generated ? 'Tạo lại với AI' : 'Tạo với AI'}</>
               }
             </Button>
           </div>

@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext'
 import JobCard, { JobCardSkeleton } from '../components/JobCard'
 import { SectionHeader, AIBadge, Button, EmptyState } from '../components/ui'
 import { LOCATIONS, JOB_LEVELS, WORK_TYPES, SALARY_RANGES } from '../data/mockData'
+import { searchJobsSemantic } from '../services/jobService'
 import clsx from 'clsx'
 
 // ─── AI Recommended banner ────────────────────────────────────────────────────
@@ -127,11 +128,13 @@ function FilterPanel({ filters, onChange, onClear }) {
 
 // ─── Main Job List page ───────────────────────────────────────────────────────
 export default function JobList() {
-  const { jobs } = useApp()
+  const { jobs, setJobs } = useApp()
   const [searchParams] = useSearchParams()
   const queryParam = searchParams.get('q') || ''
 
   const [loading, setLoading]   = useState(true)
+  const [searchResults, setSearchResults] = useState(null)
+  const [searchError, setSearchError] = useState('')
   const [filters, setFilters]   = useState({ locations: [], levels: [], types: [], salaryKey: 'Tất cả' })
   const [showFilter, setShowFilter] = useState(false)
   const [page, setPage]         = useState(1)
@@ -139,15 +142,51 @@ export default function JobList() {
 
   useEffect(() => {
     setLoading(true)
-    const t = setTimeout(() => setLoading(false), 900)
-    return () => clearTimeout(t)
-  }, [filters, queryParam])
+    setSearchError('')
+    let cancelled = false
+
+    if (!queryParam.trim()) {
+      setSearchResults(null)
+      setLoading(false)
+      return () => { cancelled = true }
+    }
+
+    searchJobsSemantic(queryParam.trim())
+      .then(result => {
+        if (!cancelled) {
+          const results = result.data || []
+          setSearchResults(results)
+          // Keep fetched jobs available to Job Detail and Cover Letter after
+          // the user clicks a semantic-search result.
+          setJobs(current => {
+            const merged = new Map(current.map(job => [job.id, job]))
+            results.forEach(job => merged.set(job.id, { ...merged.get(job.id), ...job }))
+            return [...merged.values()]
+          })
+        }
+      })
+      .catch(error => {
+        console.error('Semantic job search failed:', error)
+        if (!cancelled) {
+          setSearchResults([])
+          setSearchError('Không thể kết nối dịch vụ tìm kiếm AI. Vui lòng thử lại.')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [queryParam, setJobs])
 
   const salaryRange = SALARY_RANGES.find(r => r.label === filters.salaryKey) || SALARY_RANGES[0]
 
   const filtered = useMemo(() => {
-    return jobs.filter(job => {
-      if (queryParam) {
+    const sourceJobs = searchResults ?? jobs
+    return sourceJobs.filter(job => {
+      // Semantic results are already ranked by the backend. Only apply exact
+      // keyword matching when using the local fallback list.
+      if (queryParam && searchResults === null) {
         const q = queryParam.toLowerCase()
         if (!job.title.toLowerCase().includes(q) &&
             !job.company.toLowerCase().includes(q) &&
@@ -160,7 +199,7 @@ export default function JobList() {
       if (salaryRange.max < 99999 && jobMax < salaryRange.min) return false
       return true
     })
-  }, [jobs, queryParam, filters, salaryRange])
+  }, [jobs, searchResults, queryParam, filters, salaryRange])
 
   const paginated = filtered.slice(0, page * PAGE_SIZE)
   const hasMore   = paginated.length < filtered.length
@@ -213,6 +252,11 @@ export default function JobList() {
           <AIRecommendBanner />
 
           {/* Results header */}
+          {searchError && (
+            <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {searchError}
+            </div>
+          )}
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm text-text-secondary">
               {loading ? 'Đang tìm kiếm...' : (
