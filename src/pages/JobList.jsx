@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext'
 import JobCard, { JobCardSkeleton } from '../components/JobCard'
 import { SectionHeader, AIBadge, Button, EmptyState } from '../components/ui'
 import { LOCATIONS, JOB_LEVELS, WORK_TYPES, SALARY_RANGES } from '../data/mockData'
-import { searchJobsSemantic } from '../services/jobService'
+import { searchJobsSemantic, getJobs } from '../services/jobService'
 import clsx from 'clsx'
 
 // ─── AI Recommended banner ────────────────────────────────────────────────────
@@ -138,6 +138,7 @@ export default function JobList() {
   const [filters, setFilters]   = useState({ locations: [], levels: [], types: [], salaryKey: 'Tất cả' })
   const [showFilter, setShowFilter] = useState(false)
   const [page, setPage]         = useState(1)
+  const [searchLimit, setSearchLimit] = useState(30)
   const PAGE_SIZE = 6
 
   useEffect(() => {
@@ -146,12 +147,23 @@ export default function JobList() {
     let cancelled = false
 
     if (!queryParam.trim()) {
-      setSearchResults(null)
-      setLoading(false)
+      getJobs({ size: searchLimit })
+        .then(result => {
+          if (!cancelled) {
+            setSearchResults(result.data || [])
+          }
+        })
+        .catch(error => {
+          console.error('Failed to fetch jobs:', error)
+          if (!cancelled) setSearchError('Không thể tải danh sách việc làm.')
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
       return () => { cancelled = true }
     }
 
-    searchJobsSemantic(queryParam.trim())
+    searchJobsSemantic(queryParam.trim(), searchLimit)
       .then(result => {
         if (!cancelled) {
           const results = result.data || []
@@ -177,7 +189,7 @@ export default function JobList() {
       })
 
     return () => { cancelled = true }
-  }, [queryParam, setJobs])
+  }, [queryParam, setJobs, searchLimit])
 
   const salaryRange = SALARY_RANGES.find(r => r.label === filters.salaryKey) || SALARY_RANGES[0]
 
@@ -263,11 +275,26 @@ export default function JobList() {
                 <><span className="font-semibold text-text-primary">{filtered.length}</span> kết quả{queryParam && <> cho &ldquo;<span className="text-violet">{queryParam}</span>&rdquo;</>}</>
               )}
             </p>
-            {activeCount > 0 && (
-              <button onClick={clearFilters} className="text-xs text-red-500 hover:underline">
-                Xoá bộ lọc ({activeCount})
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted">Số kết quả:</span>
+                <select 
+                  value={searchLimit} 
+                  onChange={e => setSearchLimit(Number(e.target.value))}
+                  className="text-xs px-2 py-1 border border-gray-200 rounded focus:outline-none focus:border-violet"
+                >
+                  <option value={10}>10</option>
+                  <option value={30}>30</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                </select>
+              </div>
+              {activeCount > 0 && (
+                <button onClick={clearFilters} className="text-xs text-red-500 hover:underline">
+                  Xoá bộ lọc ({activeCount})
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Job cards grid */}
