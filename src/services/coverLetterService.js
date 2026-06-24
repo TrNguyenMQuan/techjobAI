@@ -1,6 +1,6 @@
 import { api, mockDelay } from './api'
 
-const USE_MOCK = true
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 /**
  * FR-8 — Generate an AI cover letter for a given job + CV combination.

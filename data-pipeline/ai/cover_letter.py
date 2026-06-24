@@ -290,11 +290,15 @@ def generate_cover_letter_from_job_id(
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """
-        SELECT title, company_name, description, requirements
-        FROM warehouse_warehouse.fact_job
-        WHERE source_id = %s OR job_id::text = %s
+        SELECT f.job_title AS title,
+               COALESCE(c.company_name, 'Company') AS company_name,
+               f.job_description AS description,
+               f.job_requirement AS requirements
+        FROM warehouse_warehouse.fact_job_postings f
+        LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+        WHERE f.job_id::text = %s
         """,
-        [job_id, job_id],
+        [job_id],
     )
     job = cur.fetchone()
     cur.close()

@@ -1,7 +1,7 @@
 import { api, mockDelay } from './api'
 import { MOCK_PROFILE } from '../data/mockData'
 
-const USE_MOCK = true
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 /** FR-4 — Profile & Career Preferences */
 export async function getProfile() {

@@ -1,7 +1,7 @@
 import { api, mockDelay } from './api'
 import { MARKET_SALARY_DATA, EMERGING_SKILLS } from '../data/mockData'
 
-const USE_MOCK = true
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 export async function getMarketOverview() {
   if (USE_MOCK) {

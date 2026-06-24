@@ -7,8 +7,31 @@ import { MOCK_JOBS, SKILL_DATA } from '../data/mockData'
 // implementation below returns a realistic canned response so the full chat
 // UI (streaming, mini job cards, inline charts, RAG badges) can be demoed
 // without a backend.
-const USE_MOCK = false
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+const CHAT_TIMEOUT_MS = Number(import.meta.env.VITE_CHAT_TIMEOUT_MS || 90000)
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/chat'
+const CHAT_SESSION_KEY = 'techjob_chat_session_id'
+
+function createSessionId() {
+  const id = globalThis.crypto?.randomUUID?.()
+    || `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  return `web-${id}`.slice(0, 100)
+}
+
+export function getChatSessionId() {
+  let sessionId = sessionStorage.getItem(CHAT_SESSION_KEY)
+  if (!sessionId) {
+    sessionId = createSessionId()
+    sessionStorage.setItem(CHAT_SESSION_KEY, sessionId)
+  }
+  return sessionId
+}
+
+export function resetChatSession() {
+  const sessionId = createSessionId()
+  sessionStorage.setItem(CHAT_SESSION_KEY, sessionId)
+  return sessionId
+}
 
 /**
  * Builds an AI response for a user prompt.
@@ -20,7 +43,12 @@ export async function sendChatMessage(text, _history = []) {
   if (!USE_MOCK) {
     try {
       const { data } = await api.post('/chat', null, {
-        params: { message: text, session_id: 'default' }
+        // Never share the backend's in-memory conversation history through the
+        // global "default" session. Each browser tab owns an isolated session.
+        params: { message: text, session_id: getChatSessionId() },
+        // The first semantic-search request may need to warm the embedding
+        // model. Do not inherit the short 15-second timeout used by normal APIs.
+        timeout: CHAT_TIMEOUT_MS,
       })
       return {
         type: 'mixed',

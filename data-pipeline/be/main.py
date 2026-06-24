@@ -160,25 +160,58 @@ def get_jobs(
     params = []
 
     if keyword:
-        conditions.append("(title ILIKE %s OR company_name ILIKE %s)")
+        conditions.append("(f.job_title ILIKE %s OR c.company_name ILIKE %s)")
         params.extend([f"%{keyword}%", f"%{keyword}%"])
     if salary_band:
-        conditions.append("salary_band = %s")
+        conditions.append(
+            """CASE
+                WHEN f.salary_min IS NULL AND f.salary_max IS NULL THEN 'Negotiable'
+                WHEN COALESCE(f.salary_max, f.salary_min) < 20000000 THEN 'Under 20M'
+                WHEN COALESCE(f.salary_max, f.salary_min) < 40000000 THEN '20M-40M'
+                WHEN COALESCE(f.salary_max, f.salary_min) < 70000000 THEN '40M-70M'
+                ELSE '70M+'
+            END = %s"""
+        )
         params.append(salary_band)
 
     where_clause = "WHERE " + " AND ".join(conditions) if conditions else ""
 
     # Count
-    cur.execute(f"SELECT COUNT(*) as total FROM warehouse_warehouse.fact_job {where_clause}", params)
+    cur.execute(
+        f"""SELECT COUNT(*) as total
+            FROM warehouse_warehouse.fact_job_postings f
+            LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+            {where_clause}""",
+        params,
+    )
     total = cur.fetchone()["total"]
 
     # Data
     cur.execute(
-        f"""SELECT source_id, title, company_name, primary_city, salary_text,
-                   salary_min_vnd, salary_max_vnd, salary_band, job_level_vi,
-                   work_mode, source_url, posted_date
-            FROM warehouse_warehouse.fact_job {where_clause}
-            ORDER BY posted_date DESC NULLS LAST
+        f"""SELECT f.job_id::text AS source_id,
+                   f.job_title AS title,
+                   COALESCE(c.company_name, 'Unknown') AS company_name,
+                   COALESCE(f.working_locations->0->>'city', 'Unknown') AS primary_city,
+                   CONCAT(COALESCE(f.salary_min::text, 'Negotiable'), ' - ', COALESCE(f.salary_max::text, 'Negotiable')) AS salary_text,
+                   f.salary_min AS salary_min_vnd,
+                   f.salary_max AS salary_max_vnd,
+                   CASE
+                       WHEN f.salary_min IS NULL AND f.salary_max IS NULL THEN 'Negotiable'
+                       WHEN COALESCE(f.salary_max, f.salary_min) < 20000000 THEN 'Under 20M'
+                       WHEN COALESCE(f.salary_max, f.salary_min) < 40000000 THEN '20M-40M'
+                       WHEN COALESCE(f.salary_max, f.salary_min) < 70000000 THEN '40M-70M'
+                       ELSE '70M+'
+                   END AS salary_band,
+                   COALESCE(l.level_name_vi, 'Unknown') AS job_level_vi,
+                   COALESCE(t.type_working_name_vi, 'Unknown') AS work_mode,
+                   '' AS source_url,
+                   f.created_on AS posted_date
+            FROM warehouse_warehouse.fact_job_postings f
+            LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+            LEFT JOIN warehouse_warehouse.dim_job_level l ON f.job_level_id = l.job_level_id
+            LEFT JOIN warehouse_warehouse.dim_type_working t ON f.type_working_id = t.type_working_id
+            {where_clause}
+            ORDER BY f.created_on DESC NULLS LAST
             LIMIT %s OFFSET %s""",
         params + [size, offset],
     )
@@ -435,8 +468,14 @@ async def generate_cover_letter_endpoint(
     )
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
-        "SELECT title, company_name, description, requirements FROM warehouse_warehouse.fact_job WHERE source_id = %s OR job_id::text = %s",
-        [job_id, job_id],
+        """SELECT f.job_title AS title,
+                  COALESCE(c.company_name, %s) AS company_name,
+                  f.job_description AS description,
+                  f.job_requirement AS requirements
+           FROM warehouse_warehouse.fact_job_postings f
+           LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
+           WHERE f.job_id::text = %s""",
+        [company_name, job_id],
     )
     job = cur.fetchone()
     cur.close()
@@ -449,6 +488,84 @@ async def generate_cover_letter_endpoint(
     return generate_cover_letter(cv_text, jd_text, job["title"], job["company_name"], language)
 
 
+def _legacy_build_embeddings_disabled(batch_size: int = Query(8, ge=1, le=64)):
+    """Build embeddings for jobs missing from job_embeddings table.
+    Reuses the model already loaded in memory — no extra RAM needed."""
+    model = get_model()
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Ensure table exists
+    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS warehouse_warehouse.job_embeddings (
+            job_id      INTEGER PRIMARY KEY,
+            embedding   vector(384),
+            model_name  TEXT,
+            embedded_at TIMESTAMP DEFAULT NOW()
+        );
+    """)
+    cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_job_embeddings_hnsw
+        ON warehouse_warehouse.job_embeddings USING hnsw (embedding vector_cosine_ops)
+        WITH (m = 16, ef_construction = 64);
+    """)
+    conn.commit()
+
+    # Fetch jobs without embeddings
+    cur.execute("""
+        SELECT f.job_id, f.job_title, f.job_description, f.job_requirement
+        FROM warehouse_warehouse.fact_job_postings f
+        LEFT JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
+        WHERE e.job_id IS NULL
+        ORDER BY f.job_id
+    """)
+    jobs = cur.fetchall()
+
+    if not jobs:
+        cur.close()
+        conn.close()
+        return {"status": "ok", "message": "All jobs already have embeddings", "processed": 0}
+
+    total = 0
+    for i in range(0, len(jobs), batch_size):
+        batch = jobs[i:i + batch_size]
+        texts = []
+        ids = []
+        for job_id, title, desc, req in batch:
+            parts = []
+            if title:
+                parts.append(f"Title: {title}")
+            if desc:
+                parts.append(f"Description: {desc[:500]}")
+            if req:
+                parts.append(f"Requirements: {req[:300]}")
+            text = " | ".join(parts) if parts else ""
+            if text:
+                texts.append(text)
+                ids.append(job_id)
+
+        if not texts:
+            continue
+
+        embeddings = model.encode(texts, show_progress_bar=False, batch_size=batch_size)
+
+        for job_id, emb in zip(ids, embeddings):
+            vec_str = "[" + ",".join(str(float(x)) for x in emb) + "]"
+            cur.execute(
+                """INSERT INTO warehouse_warehouse.job_embeddings (job_id, embedding, model_name, embedded_at)
+                   VALUES (%s, %s::vector, %s, NOW())
+                   ON CONFLICT (job_id) DO UPDATE
+                   SET embedding = EXCLUDED.embedding, model_name = EXCLUDED.model_name, embedded_at = NOW();""",
+                [job_id, vec_str, "all-MiniLM-L6-v2"]
+            )
+        conn.commit()
+        total += len(ids)
+
+    cur.close()
+    conn.close()
+    return {"status": "ok", "processed": total, "total_jobs": len(jobs)}
 @app.post("/api/train-salary-model")
 def train_salary_model():
     """Retrain the salary prediction model with latest data (admin endpoint)."""
@@ -493,8 +610,8 @@ def build_embeddings(batch_size: int = Query(8, ge=1, le=64)):
 
     # Fetch jobs without embeddings
     cur.execute("""
-        SELECT f.job_id, f.title, f.description, f.requirements
-        FROM warehouse_warehouse.fact_job f
+        SELECT f.job_id, f.job_title, f.job_description, f.job_requirement
+        FROM warehouse_warehouse.fact_job_postings f
         LEFT JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
         WHERE e.job_id IS NULL
         ORDER BY f.job_id

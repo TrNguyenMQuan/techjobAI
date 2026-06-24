@@ -52,7 +52,7 @@ def list_techjob_tables() -> dict:
     """Return the main warehouse objects exposed to agents and MCP clients."""
     return {
         "warehouse": [
-            "warehouse_warehouse.fact_job",
+            "warehouse_warehouse.fact_job_postings",
             "warehouse_warehouse.dim_company",
             "warehouse_warehouse.dim_skill",
             "warehouse_warehouse.dim_location",
@@ -244,14 +244,14 @@ def get_tool_definitions():
             "description": (
                 "Execute a read-only SQL query against the TechJob AI data warehouse. "
                 "Only SELECT queries are allowed. The database contains tables: "
-                "warehouse_warehouse.fact_job (job postings with salary, skills, location), "
+                "warehouse_warehouse.fact_job_postings (job postings with salary, skills, location), "
                 "warehouse_warehouse.dim_company, warehouse_warehouse.dim_skill, "
                 "warehouse_warehouse.dim_location, warehouse_warehouse.agg_top_skills, "
                 "warehouse_warehouse.agg_salary_by_title, warehouse_warehouse.agg_trend_monthly, "
                 "warehouse_warehouse.dashboard_cache. "
-                "Key columns in fact_job: source_id, title, company_name, primary_city, "
-                "salary_min_vnd, salary_max_vnd, salary_band, job_level_vi, work_mode, "
-                "description, requirements, skills_json, posted_date."
+                "Key columns in fact_job_postings: job_id, company_id, job_title, "
+                "salary_min, salary_max, working_locations, skills, created_on, "
+                "job_description, job_requirement."
             ),
             "inputSchema": {
                 "type": "object",
@@ -371,12 +371,12 @@ def _run_self_test() -> None:
 
     # Test 2: Blocked DELETE
     print("\n[Test 2] Blocked DELETE:")
-    result = execute_sql("DELETE FROM warehouse_warehouse.fact_job;")
+    result = execute_sql("DELETE FROM warehouse_warehouse.fact_job_postings;")
     print(json.dumps(result, indent=2))
 
     # Test 3: Blocked UPDATE
     print("\n[Test 3] Blocked UPDATE:")
-    result = execute_sql("UPDATE warehouse_warehouse.fact_job SET title='hacked';")
+    result = execute_sql("UPDATE warehouse_warehouse.fact_job_postings SET job_title='hacked';")
     print(json.dumps(result, indent=2))
 
     print("\n=== All tests passed ===")

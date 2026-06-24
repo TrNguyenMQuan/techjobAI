@@ -12,7 +12,7 @@ Use this skill when the user asks about salary ranges, salary comparison, whethe
 1. Identify the role/title, city, level, work mode, and key skills from the user message.
 2. Prefer real market data before prediction:
    - Use `warehouse_marts.mart_salary_benchmark` for skill/level salary medians.
-   - Use `warehouse_warehouse.fact_job` for role/city samples.
+   - Use `warehouse_warehouse.fact_job_postings` for role/city samples.
 3. If salary is missing or the user asks about a hypothetical role, call `predict_salary_tool`.
 4. Always express salary as triệu VND/tháng.
 5. Include sample size when data comes from SQL.

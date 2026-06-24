@@ -114,8 +114,8 @@ def run():
     # 2. Fetch jobs WITHOUT embeddings (incremental via LEFT JOIN)
     with engine.connect() as conn:
         result = conn.execute(text("""
-            SELECT f.job_id, f.title, f.description, f.requirements, f.source_id
-            FROM warehouse_warehouse.fact_job f
+            SELECT f.job_id, f.job_title, f.job_description, f.job_requirement, f.skills::text
+            FROM warehouse_warehouse.fact_job_postings f
             LEFT JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
             WHERE e.job_id IS NULL
             ORDER BY f.job_id
@@ -127,26 +127,6 @@ def run():
     if not jobs:
         print("[INFO] All jobs already have embeddings. Nothing to do.")
         return
-
-    # 3. Also fetch skills for each job from staging
-    with engine.connect() as conn:
-        result = conn.execute(text("""
-            SELECT f.source_id, s.skills
-            FROM warehouse_staging.stg_jobs s
-            JOIN warehouse_warehouse.fact_job f ON f.source_id = ('vnw_' || s.job_id::text)
-            LEFT JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
-            WHERE e.job_id IS NULL
-        """))
-        skills_map = {}
-        for row in result.fetchall():
-            source_id, skills_json = row
-            try:
-                if skills_json:
-                    skills_arr = json.loads(skills_json) if isinstance(skills_json, str) else skills_json
-                    skill_names = [s.get("skillName", "") for s in skills_arr if isinstance(s, dict) and s.get("skillName")]
-                    skills_map[source_id] = json.dumps(skill_names, ensure_ascii=False)
-            except Exception:
-                skills_map[source_id] = ""
 
     # 4. Load model
     model = load_model()
@@ -162,8 +142,7 @@ def run():
         texts = []
         ids = []
         for row in batch:
-            job_id, title, description, requirements, source_id = row
-            skills_json = skills_map.get(source_id, "")
+            job_id, title, description, requirements, skills_json = row
             text_input = prepare_text(
                 title or "",
                 description or "",
@@ -205,7 +184,7 @@ def run():
             SELECT
                 COUNT(*) AS total_jobs,
                 COUNT(e.job_id) AS jobs_with_embedding
-            FROM warehouse_warehouse.fact_job f
+            FROM warehouse_warehouse.fact_job_postings f
             LEFT JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
         """))
         row = result.fetchone()

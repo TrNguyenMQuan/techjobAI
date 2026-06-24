@@ -118,14 +118,20 @@ def train():
     # Fetch training data: jobs with valid salary info
     with engine.connect() as conn:
         result = conn.execute(text("""
-            SELECT title, primary_city, job_level_vi, work_mode,
-                   skills_json, salary_min_vnd, salary_max_vnd
-            FROM warehouse_warehouse.fact_job
-            WHERE salary_min_vnd IS NOT NULL
-              AND salary_max_vnd IS NOT NULL
-              AND salary_min_vnd > 0
-              AND salary_max_vnd > 0
-              AND salary_band != 'Thương lượng'
+            SELECT f.job_title AS title,
+                   COALESCE(f.working_locations->0->>'city', 'unknown') AS primary_city,
+                   COALESCE(l.level_name_vi, 'unknown') AS job_level_vi,
+                   COALESCE(t.type_working_name_vi, 'unknown') AS work_mode,
+                   f.skills::text AS skills_json,
+                   f.salary_min AS salary_min_vnd,
+                   f.salary_max AS salary_max_vnd
+            FROM warehouse_warehouse.fact_job_postings f
+            LEFT JOIN warehouse_warehouse.dim_job_level l ON f.job_level_id = l.job_level_id
+            LEFT JOIN warehouse_warehouse.dim_type_working t ON f.type_working_id = t.type_working_id
+            WHERE f.salary_min IS NOT NULL
+              AND f.salary_max IS NOT NULL
+              AND f.salary_min > 0
+              AND f.salary_max > 0
         """))
         rows = result.fetchall()
 

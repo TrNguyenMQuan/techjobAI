@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import { MiniJobCard } from '../components/JobCard'
 import { AIBadge, TypingIndicator, Button } from '../components/ui'
 import { INITIAL_MESSAGES, QUICK_ACTIONS, SKILL_DATA } from '../data/mockData'
-import { sendChatMessage } from '../services/chatService'
+import { resetChatSession, sendChatMessage } from '../services/chatService'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer } from 'recharts'
 
 // ─── Inline skill bar chart for chat ─────────────────────────────────────────
@@ -244,6 +244,16 @@ export default function Chat() {
     if (action?.to) navigate(action.to)
   }
 
+  const handleNewConversation = () => {
+    resetChatSession()
+    setMessages(INITIAL_MESSAGES)
+    setInput('')
+    setTyping(false)
+    setStreamText('')
+    setFallback(false)
+    inputRef.current?.focus()
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] animate-fade-in -m-6">
       {/* Header */}
@@ -260,7 +270,13 @@ export default function Chat() {
             <p className="text-2xs text-text-secondary">Powered by GPT-4 &amp; Live Market Data</p>
           </div>
         </div>
-        <button className="p-2 rounded-lg text-text-muted hover:bg-gray-100 transition-colors">
+        <button
+          type="button"
+          onClick={handleNewConversation}
+          title="Bắt đầu cuộc trò chuyện mới"
+          aria-label="Bắt đầu cuộc trò chuyện mới"
+          className="p-2 rounded-lg text-text-muted hover:bg-gray-100 transition-colors"
+        >
           <MoreVertical size={16} />
         </button>
       </div>

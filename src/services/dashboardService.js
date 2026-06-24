@@ -1,7 +1,7 @@
 import { api, mockDelay } from './api'
 import { SKILL_DATA, SALARY_BOX_DATA, TREND_DATA_3M, TREND_DATA_6M, TREND_DATA_12M } from '../data/mockData'
 
-const USE_MOCK = true
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 /** FR-3.1 — Top 10 skills phổ biến */
 export async function getTopSkills() {

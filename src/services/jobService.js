@@ -2,7 +2,7 @@ import { api, mockDelay } from './api'
 import { MOCK_JOBS } from '../data/mockData'
 
 // Flip this to false once the real backend endpoints below exist.
-const USE_MOCK = true
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
 
 /**
  * FR-1 — Tầng 1: Filter & SQL truyền thống.

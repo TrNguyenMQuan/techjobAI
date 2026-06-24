@@ -14,7 +14,7 @@ def test_mcp_tool_definitions_include_standard_tools():
 def test_mcp_table_listing_tool_is_available_without_database():
     result = json.loads(handle_tool_call("list_techjob_tables_tool", {}))
 
-    assert "warehouse_warehouse.fact_job" in result["warehouse"]
+    assert "warehouse_warehouse.fact_job_postings" in result["warehouse"]
     assert "warehouse_marts.mart_salary_benchmark" in result["marts"]
 
 
