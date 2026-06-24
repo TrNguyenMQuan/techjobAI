@@ -58,5 +58,31 @@ def setup():
     conn.close()
     print("Schema silver and table silver.jobs is ready.")
 
+
+def setup_embeddings(target="dev"):
+    conn = get_conn(target)
+    cur = conn.cursor()
+    
+    cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+    
+    # Make sure data from cloud have been already
+    cur.execute("CREATE SCHEMA IF NOT EXISTS warehouse_warehouse;")
+
+    # Embeddings table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS warehouse_warehouse.job_embeddings (
+            job_id          INTEGER PRIMARY KEY,
+            embedding       vector(384),
+            model_name      TEXT NOT NULL,
+            embedded_at     TIMESTAMP DEFAULT NOW()
+        );
+    """)
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    print("pgvector ON + warehouse_warehouse.job_embeddings ready")
+
+
 if __name__ == "__main__":
     setup()
