@@ -330,8 +330,8 @@ export const LEVEL_COLOR = {
 
 // ---------- Filters ----------
 export const LOCATIONS   = ['TP.HCM', 'Hà Nội', 'Đà Nẵng', 'Remote']
-export const JOB_LEVELS  = ['Junior', 'Mid-Level', 'Senior', 'Lead']
-export const WORK_TYPES  = ['Full-time', 'Part-time', 'Remote', 'Hybrid', 'On-site']
+export const JOB_LEVELS  = ['Thực tập sinh/Sinh viên', 'Mới Tốt Nghiệp', 'Nhân viên', 'Trưởng phòng', 'Giám Đốc và Cấp Cao Hơn']
+export const WORK_TYPES  = ['Toàn thời gian', 'Bán thời gian', 'Hợp đồng', 'Tự do', 'Thực tập', 'Khác']
 export const SALARY_RANGES = [
   { label: 'Tất cả',          min: 0,    max: 99999 },
   { label: '$500 – $1,000',   min: 500,  max: 1000 },

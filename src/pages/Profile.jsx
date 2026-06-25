@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Pencil, Plus, X, Upload, Trash2, ExternalLink, Camera } from 'lucide-react'
+import { Pencil, Plus, X, Upload, Trash2, ExternalLink, Camera, Loader2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -262,15 +262,42 @@ function TabPreferences({ profile, onUpdate }) {
 
 // ── Tab: CV ────────────────────────────────────────────────────────────────────
 function TabCV() {
-  const [files, setFiles] = useState([
-    { name: 'Nguyen_Van_A_CV_2025.pdf', size: '245 KB', active: true, date: '18/06/2025' },
-  ])
+  const { cvFiles, addCvFile, removeCvFile, setActiveCv } = useApp()
+  const [uploading, setUploading] = useState(false)
+
+  const handleUpload = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      alert('File quá lớn! Tối đa 10MB.')
+      e.target.value = ''
+      return
+    }
+    setUploading(true)
+    setTimeout(() => {
+      addCvFile({
+        name: file.name,
+        size: file.size >= 1024 * 1024
+          ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+          : `${Math.round(file.size / 1024)} KB`,
+        date: new Date().toLocaleDateString('vi-VN'),
+        active: cvFiles.length === 0,
+      })
+      setUploading(false)
+      e.target.value = ''
+    }, 800)
+  }
 
   return (
     <div className="space-y-4">
       <Card className="p-5">
         <h3 className="text-sm font-semibold text-text-primary mb-4">CV đã tải lên</h3>
-        {files.map((f, i) => (
+
+        {cvFiles.length === 0 && !uploading && (
+          <p className="text-sm text-text-muted mb-4 text-center py-3">Chưa có CV nào được tải lên.</p>
+        )}
+
+        {cvFiles.map((f, i) => (
           <div key={i} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border border-gray-200 mb-3">
             <div className="w-8 h-8 rounded bg-red-50 flex items-center justify-center shrink-0">
               <span className="text-xs font-bold text-red-500">PDF</span>
@@ -279,19 +306,36 @@ function TabCV() {
               <p className="text-sm font-medium text-text-primary truncate">{f.name}</p>
               <p className="text-xs text-text-secondary">{f.size} · {f.date}</p>
             </div>
-            {f.active && <span className="text-xs text-mint font-medium bg-mint-bg px-2 py-0.5 rounded-full">Active</span>}
+            <button
+              onClick={() => setActiveCv(i)}
+              className={clsx(
+                'text-xs font-medium px-2 py-0.5 rounded-full transition-colors cursor-pointer',
+                f.active
+                  ? 'text-mint bg-mint-bg'
+                  : 'text-text-muted bg-gray-100 hover:text-violet hover:bg-violet-bg'
+              )}
+            >
+              {f.active ? 'Active' : 'Set Active'}
+            </button>
             <div className="flex gap-1">
               <button className="p-1.5 rounded text-text-muted hover:text-violet transition-colors"><ExternalLink size={13} /></button>
-              <button onClick={() => setFiles(prev => prev.filter((_, idx) => idx !== i))}
+              <button onClick={() => removeCvFile(i)}
                 className="p-1.5 rounded text-text-muted hover:text-red-400 transition-colors"><Trash2 size={13} /></button>
             </div>
           </div>
         ))}
 
+        {uploading && (
+          <div className="flex items-center gap-2 p-3 bg-violet-bg rounded-lg border border-violet/20 mb-3">
+            <Loader2 size={16} className="animate-spin text-violet" />
+            <span className="text-sm text-violet font-medium">Đang tải lên...</span>
+          </div>
+        )}
+
         <label className="flex items-center justify-center gap-2 w-full p-4 border-2 border-dashed border-gray-200 rounded-lg cursor-pointer hover:border-violet hover:bg-violet-bg/30 transition-all">
           <Upload size={16} className="text-text-muted" />
           <span className="text-sm text-text-secondary">Upload CV mới (PDF, max 10MB)</span>
-          <input type="file" accept=".pdf" className="hidden" />
+          <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} />
         </label>
       </Card>
     </div>

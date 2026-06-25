@@ -128,7 +128,7 @@ function FilterPanel({ filters, onChange, onClear }) {
 
 // ─── Main Job List page ───────────────────────────────────────────────────────
 export default function JobList() {
-  const { jobs, setJobs } = useApp()
+  const { jobs, setJobs, settings } = useApp()
   const [searchParams] = useSearchParams()
   const queryParam = searchParams.get('q') || ''
 
@@ -138,15 +138,16 @@ export default function JobList() {
   const [filters, setFilters]   = useState({ locations: [], levels: [], types: [], salaryKey: 'Tất cả' })
   const [showFilter, setShowFilter] = useState(false)
   const [page, setPage]         = useState(1)
-  const PAGE_SIZE = 12
+  const [searchMode, setSearchMode] = useState('exact')
+  const PAGE_SIZE = 10
 
   useEffect(() => {
     setLoading(true)
     setSearchError('')
     let cancelled = false
 
-    if (!queryParam.trim()) {
-      getJobs({ size: 50 })
+    if (!queryParam.trim() || searchMode === 'exact') {
+      getJobs({ keyword: queryParam.trim(), size: 1000, ai_estimate: false })
         .then(result => {
           if (!cancelled) {
             setSearchResults(result.data || [])
@@ -162,7 +163,8 @@ export default function JobList() {
       return () => { cancelled = true }
     }
 
-    searchJobsSemantic(queryParam.trim(), 50)
+    // Threshold: Only fetch top 50 most relevant jobs to avoid showing irrelevant results
+    searchJobsSemantic(queryParam.trim(), 50, false)
       .then(result => {
         if (!cancelled) {
           const results = result.data || []
@@ -188,7 +190,7 @@ export default function JobList() {
       })
 
     return () => { cancelled = true }
-  }, [queryParam, setJobs])
+  }, [queryParam, searchMode, setJobs])
 
   const salaryRange = SALARY_RANGES.find(r => r.label === filters.salaryKey) || SALARY_RANGES[0]
 
@@ -261,6 +263,30 @@ export default function JobList() {
 
           {/* AI Banner */}
           <AIRecommendBanner />
+
+          {/* Search Mode Toggle */}
+          {queryParam && (
+            <div className="mb-4 flex items-center gap-2 p-1.5 bg-gray-50 border border-gray-200 rounded-lg w-fit">
+              <button
+                onClick={() => setSearchMode('exact')}
+                className={clsx(
+                  "px-3 py-1.5 text-sm font-medium rounded-md transition-all",
+                  searchMode === 'exact' ? "bg-white shadow-sm text-text-primary" : "text-text-secondary hover:text-text-primary"
+                )}
+              >
+                🎯 Tìm chính xác
+              </button>
+              <button
+                onClick={() => setSearchMode('semantic')}
+                className={clsx(
+                  "px-3 py-1.5 text-sm font-medium rounded-md transition-all flex items-center gap-1.5",
+                  searchMode === 'semantic' ? "bg-white shadow-sm text-violet" : "text-text-secondary hover:text-violet"
+                )}
+              >
+                <Sparkles size={14} /> Tìm bằng AI
+              </button>
+            </div>
+          )}
 
           {/* Results header */}
           {searchError && (

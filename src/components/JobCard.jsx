@@ -1,6 +1,8 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { api } from '../services/api'
 import clsx from 'clsx'
-import { MapPin, Clock, Bookmark, ArrowRight } from 'lucide-react'
+import { MapPin, Clock, Bookmark, ArrowRight, Sparkles } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { Skeleton, AIBadge, SkillTag, LevelBadge } from './ui'
 
@@ -43,14 +45,43 @@ function CompanyLogo({ job }) {
 // ─── Main JobCard ─────────────────────────────────────────────────────────────
 export default function JobCard({ job, compact = false }) {
   const navigate      = useNavigate()
-  const { toggleSaved } = useApp()
+  const { isJobSaved, toggleSaved, settings } = useApp()
+  const saved = isJobSaved(job.id)
+
+  const [aiSalary, setAiSalary] = useState(job.aiEstimatedSalary)
+  const [loadingAi, setLoadingAi] = useState(false)
 
   // Show at most 4 skills, rest collapsed to "+N"
   const MAX_TAGS = 4
   const visibleSkills = job.skills?.slice(0, MAX_TAGS) || []
   const extraCount    = (job.skills?.length || 0) - MAX_TAGS
 
-  const showAIEstimate = job.salaryRaw === 'Thỏa thuận' || job.salaryRaw === null && !job.salaryMin
+  const showAIEstimate = job.salaryRaw === 'Thỏa thuận' || (job.salaryRaw === null && !job.salaryMin)
+
+  useEffect(() => {
+    // If setting is ON, and we don't have it yet, and this job is missing salary
+    if (settings.salaryEstimate && !aiSalary && showAIEstimate && !loadingAi) {
+      setLoadingAi(true)
+      const skillsParam = Array.isArray(job.skills) ? job.skills.join(',') : ''
+      api.post('/predict-salary', null, {
+        params: {
+          title: job.title || '',
+          city: job.location || 'unknown',
+          level: job.level || 'unknown',
+          work_mode: job.type || 'unknown',
+          skills: skillsParam
+        }
+      }).then(res => {
+        if (res.data?.predicted_max_vnd) {
+          setAiSalary(res.data.predicted_max_vnd)
+        }
+      }).catch(err => {
+        console.error('Failed to predict salary:', err)
+      }).finally(() => {
+        setLoadingAi(false)
+      })
+    }
+  }, [settings.salaryEstimate, aiSalary, showAIEstimate, job])
 
   return (
     <div
@@ -79,16 +110,16 @@ export default function JobCard({ job, compact = false }) {
 
         {/* Bookmark */}
         <button
-          onClick={e => { e.stopPropagation(); toggleSaved(job.id) }}
+          onClick={e => { e.stopPropagation(); toggleSaved(job.id, job) }}
           className={clsx(
             'p-1.5 rounded-lg transition-colors shrink-0',
-            job.saved
+            saved
               ? 'text-violet bg-violet-bg'
               : 'text-text-muted hover:text-violet hover:bg-violet-bg'
           )}
-          title={job.saved ? 'Bỏ lưu' : 'Lưu tin'}
+          title={saved ? 'Bỏ lưu' : 'Lưu tin'}
         >
-          <Bookmark size={15} fill={job.saved ? 'currentColor' : 'none'} />
+          <Bookmark size={15} fill={saved ? 'currentColor' : 'none'} />
         </button>
       </div>
 
@@ -119,11 +150,17 @@ export default function JobCard({ job, compact = false }) {
       </div>
 
       {/* AI estimated salary */}
-      {job.aiEstimatedSalary && (showAIEstimate || !compact) && (
+      {settings.salaryEstimate && (showAIEstimate || !compact) && (
         <div className="mb-3">
-          <AIBadge variant="mint">
-            🤖 AI Dự đoán: ~ {job.aiEstimatedSalary.toLocaleString('vi-VN')} VND
-          </AIBadge>
+          {aiSalary ? (
+            <AIBadge variant="mint">
+              🤖 AI Dự đoán: ~ {aiSalary.toLocaleString('vi-VN')} VND
+            </AIBadge>
+          ) : loadingAi ? (
+            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-gray-50 border border-gray-100 text-xs text-text-muted animate-pulse">
+              <Sparkles size={12} className="text-gray-400" /> Đang tính toán lương...
+            </div>
+          ) : null}
         </div>
       )}
 

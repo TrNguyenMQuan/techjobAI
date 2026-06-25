@@ -109,7 +109,11 @@ export default function Login() {
             <input type="checkbox" className="rounded border-gray-300 text-indigo focus:ring-violet" />
             <span className="text-text-secondary">Ghi nhớ đăng nhập</span>
           </label>
-          <button type="button" className="text-violet hover:text-violet-light transition-colors font-medium">
+          <button 
+            type="button" 
+            onClick={() => setServerError('Vui lòng sử dụng tài khoản Demo bên dưới (hoặc tạo tài khoản mới) để trải nghiệm vì tính năng gửi Email khôi phục đang được tắt trên bản dùng thử.')}
+            className="text-violet hover:text-violet-light transition-colors font-medium"
+          >
             Quên mật khẩu?
           </button>
         </div>

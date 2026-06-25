@@ -1,6 +1,6 @@
 // ─── Settings Page ────────────────────────────────────────────────────────────
 import { useState }     from 'react'
-import { User, Shield, Bell, Bot, Globe, ChevronRight, Save } from 'lucide-react'
+import { User, Shield, Bell, Bot, Globe, ChevronRight, Save, Check, Lock, Eye, EyeOff } from 'lucide-react'
 import { Card, Button, Input, Toggle, SectionHeader, Avatar } from '../components/ui'
 import { useApp } from '../context/AppContext'
 import clsx from 'clsx'
@@ -40,12 +40,20 @@ function SettingsNav({ active, onChange }) {
   )
 }
 
-function AccountSettings({ profile }) {
+// ── Account Settings ─────────────────────────────────────────────────────────
+function AccountSettings({ profile, updateProfile }) {
   const [form, setForm] = useState({
     name: profile.name, title: profile.title,
     email: profile.email, phone: profile.phone,
   })
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const [saved, setSaved] = useState(false)
+  const set = k => e => { setForm(f => ({ ...f, [k]: e.target.value })); setSaved(false) }
+
+  const handleSave = () => {
+    updateProfile(form)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
 
   return (
     <Card className="p-6">
@@ -70,17 +78,141 @@ function AccountSettings({ profile }) {
         <Input label="Số điện thoại" value={form.phone} onChange={set('phone')} />
       </div>
 
-      <div className="flex justify-end mt-5">
-        <Button variant="primary"><Save size={13} /> Lưu thay đổi</Button>
+      <div className="flex items-center justify-end gap-3 mt-5">
+        {saved && (
+          <span className="flex items-center gap-1 text-xs text-mint font-medium animate-fade-in">
+            <Check size={13} /> Đã lưu thành công
+          </span>
+        )}
+        <Button variant="primary" onClick={handleSave}><Save size={13} /> Lưu thay đổi</Button>
       </div>
     </Card>
   )
 }
 
-function AISettings() {
-  const [semanticSearch, setSemanticSearch] = useState(true)
-  const [salaryEstimate, setSalaryEstimate] = useState(true)
+// ── Security Settings ─────────────────────────────────────────────────────────
+function SecuritySettings() {
+  const [form, setForm] = useState({ current: '', newPass: '', confirm: '' })
+  const [show, setShow] = useState({ current: false, newPass: false, confirm: false })
+  const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
+  const set = k => e => { setForm(f => ({ ...f, [k]: e.target.value })); setError(''); setSaved(false) }
+  const toggle = k => setShow(s => ({ ...s, [k]: !s[k] }))
+
+  const handleSave = () => {
+    if (!form.current) { setError('Vui lòng nhập mật khẩu hiện tại.'); return }
+    if (form.newPass.length < 6) { setError('Mật khẩu mới phải có ít nhất 6 ký tự.'); return }
+    if (form.newPass !== form.confirm) { setError('Xác nhận mật khẩu không khớp.'); return }
+
+    // Update password in mock user store
+    const token = localStorage.getItem('techjob_token')
+    const usersRaw = localStorage.getItem('techjob_mock_users')
+    if (token && usersRaw) {
+      const userId = token.startsWith('mock_') ? token.split('_')[1] : null
+      if (userId) {
+        const users = JSON.parse(usersRaw)
+        const idx = users.findIndex(u => u.id === userId)
+        if (idx !== -1) {
+          if (users[idx].password !== form.current) {
+            setError('Mật khẩu hiện tại không đúng.'); return
+          }
+          users[idx].password = form.newPass
+          localStorage.setItem('techjob_mock_users', JSON.stringify(users))
+        }
+      }
+    }
+
+    setSaved(true)
+    setForm({ current: '', newPass: '', confirm: '' })
+    setTimeout(() => setSaved(false), 2500)
+  }
+
+  const PasswordInput = ({ label, field }) => (
+    <div className="flex flex-col gap-1">
+      <label className="text-xs font-medium text-text-secondary uppercase tracking-wide">{label}</label>
+      <div className="relative">
+        <input
+          type={show[field] ? 'text' : 'password'}
+          value={form[field]}
+          onChange={set(field)}
+          placeholder="••••••••"
+          className="w-full px-3 py-2 pr-10 text-sm rounded border border-gray-200 focus:outline-none focus:border-violet focus:ring-2 focus:ring-violet/20 transition-all"
+        />
+        <button
+          type="button" tabIndex={-1}
+          onClick={() => toggle(field)}
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-secondary transition-colors"
+        >
+          {show[field] ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
+    </div>
+  )
+
+  return (
+    <Card className="p-6 space-y-5">
+      <div className="flex items-center gap-2">
+        <Lock size={16} className="text-violet" />
+        <h2 className="text-base font-semibold text-text-primary">Đổi mật khẩu</h2>
+      </div>
+
+      {error && (
+        <div className="px-3 py-2.5 rounded-lg bg-red-50 border border-red-200 text-sm text-red-600">{error}</div>
+      )}
+      {saved && (
+        <div className="px-3 py-2.5 rounded-lg bg-mint-bg border border-mint/30 text-sm text-mint-dark flex items-center gap-1.5">
+          <Check size={14} /> Mật khẩu đã được cập nhật thành công.
+        </div>
+      )}
+
+      <div className="space-y-4 max-w-md">
+        <PasswordInput label="Mật khẩu hiện tại" field="current" />
+        <PasswordInput label="Mật khẩu mới" field="newPass" />
+        <PasswordInput label="Xác nhận mật khẩu mới" field="confirm" />
+      </div>
+
+      <div className="flex justify-end">
+        <Button variant="primary" onClick={handleSave}><Save size={13} /> Cập nhật mật khẩu</Button>
+      </div>
+    </Card>
+  )
+}
+
+// ── Notification Settings ─────────────────────────────────────────────────────
+function NotificationSettings({ settings, updateSettings }) {
+  return (
+    <Card className="p-6 space-y-5">
+      <h2 className="text-base font-semibold text-text-primary">Cài đặt thông báo</h2>
+      <div className="space-y-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Thông báo qua email</p>
+            <p className="text-xs text-text-secondary mt-0.5">Nhận email khi có hoạt động quan trọng.</p>
+          </div>
+          <Toggle checked={settings.notifEmail} onChange={v => updateSettings({ notifEmail: v })} />
+        </div>
+        <div className="border-t border-gray-100 pt-4 flex items-start justify-between">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Job Alert</p>
+            <p className="text-xs text-text-secondary mt-0.5">Nhận thông báo khi có việc làm mới phù hợp.</p>
+          </div>
+          <Toggle checked={settings.notifJobAlert} onChange={v => updateSettings({ notifJobAlert: v })} />
+        </div>
+        <div className="border-t border-gray-100 pt-4 flex items-start justify-between">
+          <div>
+            <p className="text-sm font-medium text-text-primary">Báo cáo tuần</p>
+            <p className="text-xs text-text-secondary mt-0.5">Nhận tổng hợp thị trường IT hàng tuần.</p>
+          </div>
+          <Toggle checked={settings.notifWeekly} onChange={v => updateSettings({ notifWeekly: v })} />
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+// ── AI Settings ───────────────────────────────────────────────────────────────
+function AISettings({ settings, updateSettings }) {
   return (
     <Card className="p-6 space-y-5">
       <h2 className="text-base font-semibold text-text-primary">Tuỳ chọn AI</h2>
@@ -90,37 +222,48 @@ function AISettings() {
             <p className="text-sm font-medium text-text-primary">Đề xuất tìm kiếm ngữ nghĩa</p>
             <p className="text-xs text-text-secondary mt-0.5">Sử dụng AI để hiểu ngữ cảnh tìm kiếm.</p>
           </div>
-          <Toggle checked={semanticSearch} onChange={setSemanticSearch} />
+          <Toggle checked={settings.semanticSearch} onChange={v => updateSettings({ semanticSearch: v })} />
         </div>
         <div className="border-t border-gray-100 pt-4 flex items-start justify-between">
           <div>
             <p className="text-sm font-medium text-text-primary">Ước tính lương AI</p>
             <p className="text-xs text-text-secondary mt-0.5">Hiển thị dự đoán lương dựa trên dữ liệu.</p>
           </div>
-          <Toggle checked={salaryEstimate} onChange={setSalaryEstimate} />
+          <Toggle checked={settings.salaryEstimate} onChange={v => updateSettings({ salaryEstimate: v })} />
         </div>
       </div>
     </Card>
   )
 }
 
-function LocaleSettings() {
+// ── Locale Settings ──────────────────────────────────────────────────────────
+function LocaleSettings({ settings, updateSettings }) {
   return (
     <Card className="p-6 space-y-5">
       <h2 className="text-base font-semibold text-text-primary">Ngôn ngữ & Vùng</h2>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Ngôn ngữ giao diện</p>
-          <select className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-violet">
-            <option>Tiếng Việt</option>
-            <option>English</option>
+          <select
+            value={settings.language}
+            onChange={e => updateSettings({ language: e.target.value })}
+            className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-violet"
+          >
+            <option value="vi">Tiếng Việt</option>
+            <option value="en">English</option>
           </select>
         </div>
         <div>
           <p className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-1">Múi giờ</p>
-          <select className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-violet">
-            <option>(GMT+07:00) Indochina Time – Ho Chi Minh</option>
-            <option>(GMT+00:00) UTC</option>
+          <select
+            value={settings.timezone}
+            onChange={e => updateSettings({ timezone: e.target.value })}
+            className="w-full text-sm border border-gray-200 rounded px-3 py-2 focus:outline-none focus:border-violet"
+          >
+            <option value="Asia/Ho_Chi_Minh">(GMT+07:00) Indochina Time – Ho Chi Minh</option>
+            <option value="UTC">(GMT+00:00) UTC</option>
+            <option value="Asia/Tokyo">(GMT+09:00) Japan Standard Time – Tokyo</option>
+            <option value="America/New_York">(GMT-05:00) Eastern Time – New York</option>
           </select>
         </div>
       </div>
@@ -128,8 +271,9 @@ function LocaleSettings() {
   )
 }
 
+// ── Main Settings page ───────────────────────────────────────────────────────
 export function Settings() {
-  const { profile } = useApp()
+  const { profile, updateProfile, settings, updateSettings } = useApp()
   const [activeSetting, setActiveSetting] = useState('account')
 
   return (
@@ -138,16 +282,11 @@ export function Settings() {
       <div className="flex gap-5 items-start">
         <SettingsNav active={activeSetting} onChange={setActiveSetting} />
         <div className="flex-1">
-          {activeSetting === 'account'  && <AccountSettings profile={profile} />}
-          {activeSetting === 'ai'       && <AISettings />}
-          {activeSetting === 'locale'   && <LocaleSettings />}
-          {(activeSetting === 'security' || activeSetting === 'notif') && (
-            <Card className="p-8 text-center">
-              <p className="text-text-secondary text-sm">
-                Tính năng này đang được phát triển.
-              </p>
-            </Card>
-          )}
+          {activeSetting === 'account'  && <AccountSettings profile={profile} updateProfile={updateProfile} />}
+          {activeSetting === 'security' && <SecuritySettings />}
+          {activeSetting === 'notif'    && <NotificationSettings settings={settings} updateSettings={updateSettings} />}
+          {activeSetting === 'ai'       && <AISettings settings={settings} updateSettings={updateSettings} />}
+          {activeSetting === 'locale'   && <LocaleSettings settings={settings} updateSettings={updateSettings} />}
         </div>
       </div>
     </div>

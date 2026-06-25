@@ -81,6 +81,7 @@ export async function getJobs(filters = {}) {
     size: filters.size || 20,
     keyword: filters.keyword || filters.q || '',
     salary_band: filters.salary_band || '',
+    ai_estimate: filters.ai_estimate,
   }
   const { data } = await api.get('/jobs', { params })
   return { ...data, data: (data.data || []).map(normalizeJob) }
@@ -103,7 +104,7 @@ export async function getJobById(id) {
  * In production this hits a vector DB / embeddings endpoint; here we fall
  * back to simple keyword matching against title/skills.
  */
-export async function searchJobsSemantic(query, limit = 30) {
+export async function searchJobsSemantic(query, limit = 30, aiEstimate = true) {
   if (USE_MOCK) {
     await mockDelay(700)
     const q = query.toLowerCase()
@@ -113,7 +114,7 @@ export async function searchJobsSemantic(query, limit = 30) {
     )
     return { data: results, matchType: 'semantic' }
   }
-  const { data } = await api.get('/search', { params: { q: query, limit } })
+  const { data } = await api.get('/search', { params: { q: query, limit, ai_estimate: aiEstimate } })
   return {
     data: (data.results || []).map(normalizeJob),
     total: data.results?.length || 0,

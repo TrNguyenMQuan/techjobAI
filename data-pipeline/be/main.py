@@ -146,7 +146,11 @@ def get_stats(conn = Depends(get_db)):
     """Dashboard overview stats."""
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
-    cur.execute("SELECT SUM(job_count) as total_jobs, COUNT(city_id) as total_cities FROM warehouse_marts.mart_location_demand;")
+    cur.execute("""
+        SELECT 
+            (SELECT COUNT(*) FROM warehouse_warehouse.fact_job_postings) as total_jobs,
+            (SELECT COUNT(city_id) FROM warehouse_marts.mart_location_demand) as total_cities
+    """)
     row1 = cur.fetchone()
 
     cur.execute("SELECT COUNT(*) as total_skills FROM warehouse_warehouse.dim_skill;")
@@ -167,9 +171,10 @@ def get_stats(conn = Depends(get_db)):
 @app.get("/api/jobs")
 def get_jobs(
     page: int = Query(1, ge=1),
-    size: int = Query(20, ge=1, le=100),
+    size: int = Query(100, ge=1, le=2000),
     keyword: str = Query("", max_length=100),
     salary_band: str = Query("", max_length=50),
+    ai_estimate: str = Query("true", max_length=10),
     conn = Depends(get_db)
 ):
     """List jobs with pagination and filters."""
@@ -227,7 +232,14 @@ def get_jobs(
                        ELSE '70M+'
                    END AS salary_band,
                    COALESCE(l.level_name_vi, 'Unknown') AS job_level_vi,
-                   '' AS work_mode,
+                   CASE 
+                       WHEN f.type_working_id = 1 THEN 'Toàn thời gian'
+                       WHEN f.type_working_id = 2 THEN 'Bán thời gian'
+                       WHEN f.type_working_id = 3 THEN 'Hợp đồng'
+                       WHEN f.type_working_id = 4 THEN 'Tự do'
+                       WHEN f.type_working_id = 5 THEN 'Thực tập'
+                       ELSE 'Khác'
+                   END AS work_mode,
                    '' AS source_url,
                    f.created_on AS posted_date
             FROM warehouse_warehouse.fact_job_postings f
@@ -241,21 +253,24 @@ def get_jobs(
     jobs = cur.fetchall()
     cur.close()
 
-    from ai.salary_predictor import predict_hidden_salary
     results = []
-    for job in jobs:
-        d = dict(job)
-        if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
-            pred = predict_hidden_salary(
-                title=d.get("title", ""),
-                city=d.get("primary_city", ""),
-                level=d.get("job_level_vi", ""),
-                work_mode=d.get("work_mode", ""),
-                skills=d.get("skills", "") or ""
-            )
-            if pred:
-                d["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
-        results.append(d)
+    if ai_estimate.lower() == 'true':
+        from ai.salary_predictor import predict_hidden_salary
+        for job in jobs:
+            d = dict(job)
+            if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
+                pred = predict_hidden_salary(
+                    title=d.get("title", ""),
+                    city=d.get("primary_city", ""),
+                    level=d.get("job_level_vi", ""),
+                    work_mode=d.get("work_mode", ""),
+                    skills=d.get("skills", "") or ""
+                )
+                if pred:
+                    d["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
+            results.append(d)
+    else:
+        results = [dict(job) for job in jobs]
 
     return {"total": total, "page": page, "size": size, "data": results}
 
@@ -361,7 +376,8 @@ def get_salary_by_title(conn = Depends(get_db)):
 @app.get("/api/search")
 def semantic_search(
     q: str = Query(..., min_length=2, max_length=200),
-    limit: int = Query(10, ge=1, le=200),
+    limit: int = Query(50, ge=1, le=2000),
+    ai_estimate: str = Query("true", max_length=10),
     conn = Depends(get_db)
 ):
     """Semantic search using pgvector cosine similarity via job_embeddings table (M10)."""
@@ -382,7 +398,14 @@ def semantic_search(
                   f.salary_max AS salary_max_vnd,
                   CONCAT(f.salary_min, ' - ', f.salary_max) AS salary_text,
                   COALESCE(l.level_name_vi, 'Unknown') AS job_level_vi,
-                  '' AS work_mode,
+                  CASE 
+                      WHEN f.type_working_id = 1 THEN 'Toàn thời gian'
+                      WHEN f.type_working_id = 2 THEN 'Bán thời gian'
+                      WHEN f.type_working_id = 3 THEN 'Hợp đồng'
+                      WHEN f.type_working_id = 4 THEN 'Tự do'
+                      WHEN f.type_working_id = 5 THEN 'Thực tập'
+                      ELSE 'Khác'
+                  END AS work_mode,
                   f.skills,
                   f.created_on AS posted_date,
                   '' AS salary_band, '' AS source_url,
@@ -391,28 +414,31 @@ def semantic_search(
            LEFT JOIN warehouse_warehouse.dim_company c ON f.company_id = c.company_id
            LEFT JOIN warehouse_warehouse.dim_job_level l ON f.job_level_id = l.job_level_id
            JOIN warehouse_warehouse.job_embeddings e ON f.job_id = e.job_id
-           ORDER BY e.embedding <=> %s::vector
+           ORDER BY (e.embedding <=> %s::vector) - (CASE WHEN f.job_title ILIKE %s OR c.company_name ILIKE %s THEN 0.2 ELSE 0 END) ASC
            LIMIT %s;""",
-        [vec_str, vec_str, limit],
+        [vec_str, vec_str, f"%{q}%", f"%{q}%", limit],
     )
     rows = cur.fetchall()
     cur.close()
 
-    from ai.salary_predictor import predict_hidden_salary
     results = []
-    for row in rows:
-        d = dict(row)
-        if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
-            pred = predict_hidden_salary(
-                title=d.get("title", ""),
-                city=d.get("primary_city", ""),
-                level=d.get("job_level_vi", ""),
-                work_mode=d.get("work_mode", ""),
-                skills=d.get("skills", "") or ""
-            )
-            if pred:
-                d["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
-        results.append(d)
+    if ai_estimate.lower() == 'true':
+        from ai.salary_predictor import predict_hidden_salary
+        for row in rows:
+            d = dict(row)
+            if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
+                pred = predict_hidden_salary(
+                    title=d.get("title", ""),
+                    city=d.get("primary_city", ""),
+                    level=d.get("job_level_vi", ""),
+                    work_mode=d.get("work_mode", ""),
+                    skills=d.get("skills", "") or ""
+                )
+                if pred:
+                    d["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
+            results.append(d)
+    else:
+        results = [dict(row) for row in rows]
 
     return {"query": q, "results": results}
 

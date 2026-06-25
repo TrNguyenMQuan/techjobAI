@@ -26,7 +26,7 @@ function DetailSkeleton() {
 export default function JobDetail() {
   const { id }              = useParams()
   const navigate            = useNavigate()
-  const { jobs, toggleSaved } = useApp()
+  const { jobs, toggleSaved, settings, isJobSaved } = useApp()
 
   const [loading, setLoading] = useState(true)
   const [job, setJob] = useState(null)
@@ -135,13 +135,13 @@ export default function JobDetail() {
                     {job.salaryRaw === 'Thỏa thuận' ? 'Thỏa thuận' : job.salaryDisplay}
                     <span className="text-xs font-normal text-text-muted ml-1">/month</span>
                   </div>
-                  {salaryPrediction && (
+                  {settings.salaryEstimate && salaryPrediction && (
                     <AIBadge variant="mint">
                       <Bot size={11} />
                       ~{Number(salaryPrediction.predicted_min_vnd || 0).toLocaleString('vi-VN')} – {Number(salaryPrediction.predicted_max_vnd || 0).toLocaleString('vi-VN')} VND (AI)
                     </AIBadge>
                   )}
-                  {job.aiEstimatedSalary && !salaryPrediction && (
+                  {settings.salaryEstimate && job.aiEstimatedSalary && !salaryPrediction && (
                     <AIBadge variant="mint">
                       <Bot size={11} />
                       ~ {job.aiEstimatedSalary.toLocaleString('vi-VN')} VND (AI)
@@ -264,10 +264,10 @@ export default function JobDetail() {
                     variant="ghost"
                     size="sm"
                     className="flex-1"
-                    onClick={() => toggleSaved(job.id)}
+                    onClick={() => toggleSaved(job.id, job)}
                   >
-                    <Bookmark size={13} fill={job.saved ? 'currentColor' : 'none'} className={clsx(job.saved && 'text-violet')} />
-                    {job.saved ? 'Saved' : 'Save Job'}
+                    <Bookmark size={13} fill={isJobSaved(job.id) ? 'currentColor' : 'none'} className={clsx(isJobSaved(job.id) && 'text-violet')} />
+                    {isJobSaved(job.id) ? 'Saved' : 'Save Job'}
                   </Button>
                   <Button variant="ghost" size="sm" className="flex-1">
                     <Share2 size={13} /> Share
@@ -296,7 +296,7 @@ export default function JobDetail() {
               </Card>
 
               {/* AI Salary Prediction */}
-              {salaryPrediction && (
+              {settings.salaryEstimate && salaryPrediction && (
                 <Card className="p-5 border-mint/30 bg-mint-bg/30">
                   <h3 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-1.5">
                     <Bot size={14} className="text-mint" /> AI Salary Prediction
@@ -321,8 +321,8 @@ export default function JobDetail() {
             <Button variant="primary" className="flex-1" onClick={() => window.open(job.sourceUrl, '_blank')}>
               Apply at Source <ExternalLink size={13} />
             </Button>
-            <Button variant="outline" size="md" onClick={() => toggleSaved(job.id)}>
-              <Bookmark size={15} fill={job.saved ? 'currentColor' : 'none'} />
+            <Button variant="outline" size="md" onClick={() => toggleSaved(job.id, job)}>
+              <Bookmark size={15} fill={isJobSaved(job.id) ? 'currentColor' : 'none'} />
             </Button>
           </div>
         </>
