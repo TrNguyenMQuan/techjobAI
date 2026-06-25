@@ -163,7 +163,9 @@ services:
       dockerfile: Dockerfile.airflow
     container_name: techjob-backend
     entrypoint: ["/usr/bin/dumb-init", "--", "/home/airflow/.local/bin/uvicorn"]
-    command: be.main:app --host 0.0.0.0 --port 8000 --reload
+    # Keep the API process stable. Auto-reload briefly drops every in-flight
+    # request whenever a mounted Python file changes.
+    command: be.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     environment:
@@ -174,11 +176,26 @@ services:
       POSTGRES_PASSWORD: machine_learning
       PGSSLMODE: require
       GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_FALLBACK_API_KEY: ${GROQ_FALLBACK_API_KEY:-}
+      GROQ_MODEL: ${GROQ_MODEL:-llama-3.3-70b-versatile}
+      GROQ_FALLBACK_MODEL: ${GROQ_FALLBACK_MODEL:-llama-3.1-8b-instant}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
+      LLM_PROVIDER_CHAIN: ${LLM_PROVIDER_CHAIN:-openrouter,mistral,cerebras,groq}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-nvidia/nemotron-nano-9b-v2:free}
+      MISTRAL_MODEL: ${MISTRAL_MODEL:-mistral-small-latest}
+      CEREBRAS_MODEL: ${CEREBRAS_MODEL:-gpt-oss-120b}
+      LLM_PROVIDER: ${LLM_PROVIDER:-groq}
+      LLM_MODEL: ${LLM_MODEL:-llama-3.1-8b-instant}
+      LLM_FALLBACK_PROVIDER: ${LLM_FALLBACK_PROVIDER:-groq}
+      LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-llama-3.1-8b-instant}
       PYTHONPATH: /opt/airflow
     volumes:
       - ./be:/opt/airflow/be
       - ./fe:/opt/airflow/fe
       - ./ai:/opt/airflow/ai
+      - ./skills:/opt/airflow/skills:ro
       - ./pipeline:/opt/airflow/pipeline
       - ./source:/opt/airflow/source
       - ./.env:/opt/airflow/.env

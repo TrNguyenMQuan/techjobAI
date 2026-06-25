@@ -45,7 +45,7 @@ BLOCKED_PATTERNS = re.compile(
 )
 
 # Maximum rows returned per query to prevent memory issues
-MAX_ROWS = 200
+MAX_ROWS = 20
 
 
 def list_techjob_tables() -> dict:

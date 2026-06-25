@@ -7,32 +7,39 @@ import { AIBadge, TypingIndicator, Button } from '../components/ui'
 import { INITIAL_MESSAGES, QUICK_ACTIONS, SKILL_DATA } from '../data/mockData'
 import { resetChatSession, sendChatMessage } from '../services/chatService'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer } from 'recharts'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 // ─── Inline skill bar chart for chat ─────────────────────────────────────────
-function InlineSkillChart({ data }) {
-  const top5 = data.slice(0, 5)
+function InlineSkillChart({ data, title = 'Top Skills Demand 2025', unit = '%' }) {
+  const chartData = data.slice(0, 8)
   return (
     <div className="mt-3 bg-gray-50 rounded-lg p-3 border border-gray-200">
       <div className="flex items-center justify-between mb-2">
-        <p className="text-xs font-semibold text-text-primary">📊 Top Skills Demand 2025</p>
+        <p className="text-xs font-semibold text-text-primary">📊 {title}</p>
         <button className="text-2xs text-text-muted hover:text-violet flex items-center gap-1">
           <Download size={10} /> Export
         </button>
       </div>
-      <ResponsiveContainer width="100%" height={130}>
-        <BarChart data={top5} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={Math.max(130, chartData.length * 28)}>
+        <BarChart data={chartData} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
           <CartesianGrid horizontal={false} stroke="#E5E7EB" />
           <XAxis type="number" hide />
           <YAxis type="category" dataKey="skill" tick={{ fontSize: 10, fill: '#6B7280' }} tickLine={false} axisLine={false} width={70} />
           <Tooltip
             content={({ active, payload }) => active && payload?.[0] ? (
               <div className="bg-white shadow-card rounded px-2 py-1 text-xs border border-gray-100">
-                <b>{payload[0].payload.skill}</b>: {payload[0].value}%
+                <b>{payload[0].payload.skill}</b>: {payload[0].value} {unit}
               </div>
             ) : null}
           />
           <Bar dataKey="pct" radius={[0, 3, 3, 0]} maxBarSize={12}>
-            {top5.map((_, i) => <Cell key={i} fill={['#4338CA','#7C3AED','#10B981','#6366F1','#A78BFA'][i]} />)}
+            {chartData.map((_, i) => (
+              <Cell
+                key={i}
+                fill={['#4338CA','#7C3AED','#10B981','#6366F1','#A78BFA','#0EA5E9','#F59E0B','#EF4444'][i]}
+              />
+            ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -85,27 +92,52 @@ function MessageBubble({ msg, onAction }) {
       </div>
       <div className="max-w-xl flex-1">
         <div className="bubble-ai text-sm">
-          {/* Text content — handle simple markdown */}
+          {/* Full Markdown/GFM: headings, lists, tables, emphasis and links */}
           {msg.content && (
-            <div className="whitespace-pre-line text-text-primary leading-relaxed">
-              {msg.content.split('\n').map((line, i) => {
-                // Bold **text**
-                const parts = line.split(/(\*\*[^*]+\*\*)/g)
-                return (
-                  <p key={i} className={line === '' ? 'my-1' : ''}>
-                    {parts.map((part, j) =>
-                      part.startsWith('**') && part.endsWith('**')
-                        ? <strong key={j}>{part.slice(2, -2)}</strong>
-                        : part
-                    )}
-                  </p>
-                )
-              })}
+            <div className="text-text-primary leading-relaxed overflow-x-auto">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                components={{
+                  h3: props => <h3 className="text-base font-bold mt-3 mb-2" {...props} />,
+                  h4: props => <h4 className="text-sm font-semibold mt-3 mb-1.5" {...props} />,
+                  p: props => <p className="my-1.5" {...props} />,
+                  ul: props => <ul className="list-disc pl-5 my-2 space-y-1" {...props} />,
+                  ol: props => <ol className="list-decimal pl-5 my-2 space-y-1" {...props} />,
+                  table: props => (
+                    <table className="w-full min-w-[420px] border-collapse my-3 text-xs" {...props} />
+                  ),
+                  th: props => (
+                    <th className="border border-gray-200 bg-gray-50 px-3 py-2 text-left font-semibold" {...props} />
+                  ),
+                  td: props => (
+                    <td className="border border-gray-200 px-3 py-2 align-top" {...props} />
+                  ),
+                  a: props => (
+                    <a className="text-violet underline" target="_blank" rel="noreferrer" {...props} />
+                  ),
+                }}
+              >
+                {msg.content}
+              </ReactMarkdown>
             </div>
           )}
 
           {/* Inline chart */}
-          {msg.showChart && <InlineSkillChart data={SKILL_DATA} />}
+          {msg.showChart && (
+            msg.charts?.length > 0
+              ? msg.charts.map((chart, index) => (
+                  <InlineSkillChart
+                    key={`${chart.title}-${index}`}
+                    data={(chart.labels || []).map((skill, itemIndex) => ({
+                      skill,
+                      pct: chart.values?.[itemIndex] ?? 0,
+                    }))}
+                    title={chart.title}
+                    unit={chart.ylabel || ''}
+                  />
+                ))
+              : <InlineSkillChart data={SKILL_DATA} />
+          )}
 
           {/* Job cards */}
           {msg.jobCards?.length > 0 && (
@@ -147,9 +179,14 @@ function MessageBubble({ msg, onAction }) {
         </div>
 
         {/* Source label */}
-        {msg.type === 'mixed' && (
+        {msg.type === 'vector' && (
           <div className="mt-1 ml-1">
             <AIBadge variant="gray">🔍 Nguồn: Vector DB</AIBadge>
+          </div>
+        )}
+        {msg.type === 'data' && msg.toolsUsed?.length > 0 && (
+          <div className="mt-1 ml-1">
+            <AIBadge variant="gray">🗄️ Nguồn: Data Warehouse</AIBadge>
           </div>
         )}
 
@@ -216,12 +253,14 @@ export default function Chat() {
       return
     }
 
-    // Simulate token-by-token streaming
+    // Keep long analytical answers responsive. Streaming every word made a
+    // complete backend response look truncated for 10-20 seconds.
     setTyping(false)
     const words = aiResp.content.split(' ')
     let streamed = ''
+    const wordDelay = words.length > 180 ? 2 : 12
     for (let i = 0; i < words.length; i++) {
-      await new Promise(r => setTimeout(r, 18 + Math.random() * 20))
+      await new Promise(r => setTimeout(r, wordDelay))
       streamed += (i === 0 ? '' : ' ') + words[i]
       setStreamText(streamed)
     }
@@ -267,7 +306,7 @@ export default function Chat() {
               <p className="text-sm font-semibold text-text-primary">TechJob AI Assistant</p>
               <CheckCircle size={13} className="text-mint" />
             </div>
-            <p className="text-2xs text-text-secondary">Powered by GPT-4 &amp; Live Market Data</p>
+            <p className="text-2xs text-text-secondary">Powered by AI &amp; Live Market Data</p>
           </div>
         </div>
         <button

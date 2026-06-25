@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 import re
 import unicodedata
+from ai.llm_provider import create_chat_model, get_provider_chain
 
 try:
     from dotenv import load_dotenv
@@ -26,10 +27,6 @@ except ImportError:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
-
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-
 
 # ============================================================
 # PDF PARSING
@@ -120,25 +117,33 @@ def resolve_cover_letter_language(cv_text: str, requested_language: str = "Auto"
     """Resolve the final output language. CV language always wins."""
     return detect_cv_language(cv_text)
 
-COVER_LETTER_PROMPT_TEMPLATE = """You are an expert Headhunter and professional Cover Letter writer.
+COVER_LETTER_PROMPT_TEMPLATE = """You are a careful professional cover-letter writer.
 
 ## TASK
-Write a highly personalized, compelling Cover Letter based on the candidate's CV and the Job Description (JD).
+Write a concise, credible cover letter based only on evidence in the CV.
 
 ## STRICT RULES
-1. **OUTPUT LANGUAGE:** {language}. This was detected from the CV and is ABSOLUTELY MANDATORY. Do NOT output the wrong language.
-2. **USE REAL NAME:** You MUST extract the candidate's real name from the CV.
-3. **NO FLUFF:** Remove meaningless template placeholders like "Forename SURNAME" from the CV text.
-4. **NO CLICHES:** Avoid overused phrases like "I believe". Use strong Action Verbs.
-5. **HONESTY:** ONLY use facts from the CV. DO NOT hallucinate skills or experience.
-6. **NATURAL TONE:** If writing in Vietnamese, use natural phrasing (do NOT literally translate English idioms like "a perfect fit"). If writing in English, use professional native phrasing.
-7. **LANGUAGE CONSISTENCY:** Every sentence, greeting, sign-off, and bullet must be in {language}. Do not mix Vietnamese and English except for proper nouns, company names, job titles, and technical terms.
-8. **LENGTH:** Max 350 words.
+1. **OUTPUT LANGUAGE:** {language}. This was detected from the CV and is mandatory.
+2. **PRESERVE THE NAME:** Copy the candidate's name exactly as written in the CV. Do not reorder, translate, abbreviate, or guess it.
+3. **CV EVIDENCE ONLY:** Every claim about the candidate must be directly supported by the CV text.
+4. **JD IS NOT CANDIDATE EVIDENCE:** Technologies, protocols, domains, team names, and responsibilities found only in the JD are employer requirements. Never claim the candidate has used or mastered them.
+5. **NO INFERENCE BRIDGES:** Do not turn one project into unsupported claims such as "distributed-ready", "scalable", "production-grade", "end-to-end", "real-time", "quickly mastered", collaboration ability, automotive experience, IoT experience, async protocols, GPIO, or Electron-like contexts unless those exact facts appear in the CV.
+6. **ACCURATE STRENGTH:** Never use "mastered", "expert", "top-tier", "extensive experience", or a number of years unless explicitly stated in the CV. Prefer precise wording such as "built a project using..." or "developed familiarity with...".
+7. **NO PLACEHOLDERS OR DUPLICATE HEADER:** Do not output contact details, postal address, date, subject line, square-bracket placeholders, or Markdown/code fences.
+8. **NO UNSUPPORTED COMPANY PRAISE:** Do not invent company culture, mission, products, team details, or business impact. Reference only details explicitly present in the JD.
+9. **NATURAL TONE:** Professional, specific, modest, and human. Avoid clichés and exaggerated enthusiasm.
+10. **LANGUAGE CONSISTENCY:** Every sentence, greeting, sign-off, and bullet must be in {language}. Technical proper nouns may remain unchanged.
+11. **LENGTH:** 180-260 words. Finish with a complete sign-off.
 
 ## STRUCTURE
-1. **Hook (1 paragraph):** Get straight to the point. Show excitement about {company_name} and highlight core value for the {job_title} role.
-2. **Value Proposition (Bullet points):** 2-3 bullet points mapping the best skills/achievements in the CV to the JD requirements. Start with Action Verbs.
-3. **Call to Action (1 paragraph):** Reiterate culture fit and request an interview.
+1. Greeting to the hiring team.
+2. Opening paragraph: target role and 1-2 strongest verified matches.
+3. Evidence paragraph: describe 1-2 relevant CV projects or experiences and what the candidate actually did.
+4. Fit paragraph: acknowledge relevant JD requirements without claiming unsupported experience; express readiness to learn where appropriate.
+5. Short call to action and sign-off using the exact CV name.
+
+## OUTPUT FORMAT
+Plain text only. No Markdown bold, headings, tables, code fences, contact header, date, subject line, or placeholders.
 
 ## CANDIDATE CV
 ```
@@ -155,6 +160,89 @@ Write a highly personalized, compelling Cover Letter based on the candidate's CV
 
 ## Cover Letter:
 """
+
+
+RISKY_UNSUPPORTED_TERMS = {
+    "distributed system": ("distributed system",),
+    "async protocol": ("async protocol", "asynchronous protocol"),
+    "object-oriented programming": ("object-oriented programming",),
+    "gpio": ("gpio",),
+    "electron": ("electron",),
+    "end-to-end": ("end-to-end", "end to end"),
+    "real-time": ("real-time", "real time"),
+    "collaboration": ("collaborat", "teamwork"),
+    "proven capacity": ("proven capacity", "proven ability"),
+    "automotive experience": (
+        "automotive experience",
+        "experience in automotive",
+        "worked on automotive",
+    ),
+    "iot experience": (
+        "iot experience",
+        "experience in iot",
+        "worked on iot",
+    ),
+}
+
+
+def _sanitize_cover_letter(text: str) -> str:
+    """Remove model formatting artifacts and non-sendable placeholders."""
+    text = re.sub(r"^\s*```(?:text|markdown)?\s*", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\s*```\s*$", "", text)
+    text = text.replace("**", "").replace("__", "")
+
+    cleaned_lines = []
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            if cleaned_lines and cleaned_lines[-1] != "":
+                cleaned_lines.append("")
+            continue
+        if re.fullmatch(r"\[[^\]]+\]", line):
+            continue
+        if re.match(r"^(subject|date|tiêu\s*đề)\s*:", line, flags=re.IGNORECASE):
+            continue
+        cleaned_lines.append(line)
+
+    greeting_index = next(
+        (
+            index
+            for index, line in enumerate(cleaned_lines)
+            if re.match(
+                r"^(dear\b|kính gửi\b|thân gửi\b)",
+                line,
+                flags=re.IGNORECASE,
+            )
+        ),
+        None,
+    )
+    if greeting_index is not None:
+        cleaned_lines = cleaned_lines[greeting_index:]
+
+    return "\n".join(cleaned_lines).strip()
+
+
+def _unsupported_claim_warnings(cover_letter: str, cv_text: str) -> list[str]:
+    """Flag common cases where JD requirements become candidate claims."""
+    output_lower = cover_letter.lower()
+    cv_lower = cv_text.lower()
+    warnings = []
+    for label, variants in RISKY_UNSUPPORTED_TERMS.items():
+        supported = any(term in cv_lower for term in variants)
+        if label == "object-oriented programming":
+            supported = supported or bool(re.search(r"\boop\b", cv_lower))
+        if any(term in output_lower for term in variants) and not supported:
+            warnings.append(label)
+    for exaggerated in (
+        "mastered",
+        "mastering",
+        "top-tier",
+        "extensive experience",
+        "quickly learned",
+    ):
+        if exaggerated in output_lower and exaggerated not in cv_lower:
+            warnings.append(exaggerated)
+    return sorted(set(warnings))
 
 
 def generate_cover_letter(
@@ -177,12 +265,11 @@ def generate_cover_letter(
     Returns:
         dict with 'cover_letter', 'matched_skills', 'word_count'.
     """
-    if not GROQ_API_KEY:
+    provider_chain = get_provider_chain()
+    if not any(api_key for _, _, api_key in provider_chain):
         return {
-            "error": "Groq API key not configured. Set GROQ_API_KEY in .env file.",
+            "error": "No API key is configured for any LLM provider.",
         }
-
-    from langchain_groq import ChatGroq
 
     # Truncate inputs to manage token usage
     cv_truncated = cv_text[:3000] if len(cv_text) > 3000 else cv_text
@@ -197,16 +284,67 @@ def generate_cover_letter(
         language=language,
     )
 
-    llm = ChatGroq(
-        model=GROQ_MODEL,
-        temperature=0.7,
-        max_tokens=1500,
-        api_key=GROQ_API_KEY,
-    )
-
     try:
-        response = llm.invoke(prompt)
-        cover_letter_text = response.content.strip()
+        response = None
+        errors = []
+        for provider_index, (provider, _, api_key) in enumerate(provider_chain):
+            if not api_key:
+                continue
+            try:
+                candidate = create_chat_model(
+                    provider_index=provider_index,
+                    temperature=0.25,
+                    max_tokens=1200,
+                ).invoke(prompt)
+                finish_reason = getattr(candidate, "response_metadata", {}).get(
+                    "finish_reason"
+                )
+                if finish_reason in {"length", "max_tokens"}:
+                    raise RuntimeError("Cover letter was truncated")
+                if not isinstance(candidate.content, str) or not candidate.content.strip():
+                    raise RuntimeError("Cover letter provider returned empty content")
+                response = candidate
+                break
+            except Exception as provider_error:
+                errors.append(f"{provider}: {type(provider_error).__name__}")
+        if response is None:
+            raise RuntimeError("All LLM providers failed: " + "; ".join(errors))
+        cover_letter_text = _sanitize_cover_letter(response.content)
+        quality_warnings = _unsupported_claim_warnings(cover_letter_text, cv_text)
+
+        if quality_warnings:
+            corrective_prompt = (
+                prompt
+                + "\n\nQUALITY CHECK FAILED. Rewrite from scratch and remove "
+                + ", ".join(quality_warnings)
+                + ". These claims are not supported by the CV."
+            )
+            corrected = None
+            for provider_index, (_, _, api_key) in enumerate(provider_chain):
+                if not api_key:
+                    continue
+                try:
+                    candidate = create_chat_model(
+                        provider_index=provider_index,
+                        temperature=0.1,
+                        max_tokens=1200,
+                    ).invoke(corrective_prompt)
+                    candidate_text = _sanitize_cover_letter(candidate.content)
+                    if not _unsupported_claim_warnings(candidate_text, cv_text):
+                        corrected = candidate_text
+                        break
+                except Exception:
+                    continue
+            if corrected:
+                cover_letter_text = corrected
+                quality_warnings = []
+            else:
+                return {
+                    "error": (
+                        "Cover letter quality check failed because unsupported "
+                        "claims remained: " + ", ".join(quality_warnings)
+                    )
+                }
 
         # Extract matched skills (simple keyword matching)
         matched = _extract_matched_skills(cv_text, job_description)
@@ -219,6 +357,7 @@ def generate_cover_letter(
             "detected_cv_language": language,
             "job_title": job_title,
             "company_name": company_name,
+            "quality_warnings": quality_warnings,
         }
     except Exception as e:
         return {"error": f"Cover letter generation failed: {str(e)}"}

@@ -1,12 +1,15 @@
 {
   "mcpServers": {
     "techjob-ai": {
-      "command": "python",
-      "args": ["-m", "be.mcp_server"],
-      "cwd": "./data-pipeline",
-      "env": {
-        "PYTHONPATH": "."
-      }
+      "command": "docker",
+      "args": [
+        "exec",
+        "-i",
+        "techjob-mcp-server",
+        "python",
+        "-m",
+        "be.mcp_server"
+      ]
     }
   }
 }

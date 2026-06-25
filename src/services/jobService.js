@@ -3,6 +3,34 @@ import { MOCK_JOBS } from '../data/mockData'
 
 // Flip this to false once the real backend endpoints below exist.
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true'
+const inflightRequests = new Map()
+
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms))
+
+async function requestWithRetry(request, attempts = 5) {
+  let lastError
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      return await request()
+    } catch (error) {
+      lastError = error
+      const status = error.response?.status
+      const retryable = !status || status === 429 || status >= 500
+      if (!retryable || attempt === attempts - 1) throw error
+      await delay(500 * (2 ** attempt))
+    }
+  }
+  throw lastError
+}
+
+function dedupeRequest(key, request) {
+  if (inflightRequests.has(key)) return inflightRequests.get(key)
+  const promise = requestWithRetry(request).finally(() => {
+    inflightRequests.delete(key)
+  })
+  inflightRequests.set(key, promise)
+  return promise
+}
 
 function formatSalary(min, max) {
   if (min == null && max == null) return 'Thỏa thuận'
@@ -83,7 +111,10 @@ export async function getJobs(filters = {}) {
     salary_band: filters.salary_band || '',
     ai_estimate: filters.ai_estimate,
   }
-  const { data } = await api.get('/jobs', { params })
+  const { data } = await dedupeRequest(
+    `jobs:${JSON.stringify(params)}`,
+    () => api.get('/jobs', { params, timeout: 30000 }),
+  )
   return { ...data, data: (data.data || []).map(normalizeJob) }
 }
 
@@ -114,7 +145,11 @@ export async function searchJobsSemantic(query, limit = 30, aiEstimate = true) {
     )
     return { data: results, matchType: 'semantic' }
   }
-  const { data } = await api.get('/search', { params: { q: query, limit, ai_estimate: aiEstimate } })
+  const params = { q: query, limit, ai_estimate: aiEstimate }
+  const { data } = await dedupeRequest(
+    `search:${JSON.stringify(params)}`,
+    () => api.get('/search', { params, timeout: 90000 }),
+  )
   return {
     data: (data.results || []).map(normalizeJob),
     total: data.results?.length || 0,

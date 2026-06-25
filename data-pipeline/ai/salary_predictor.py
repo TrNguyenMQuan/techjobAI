@@ -253,6 +253,11 @@ def _load_model():
     return _cached_model
 
 
+def warm_salary_model() -> None:
+    """Load the salary model during API startup instead of the first request."""
+    _load_model()
+
+
 def predict_hidden_salary(
     title: str,
     city: str = "unknown",
@@ -273,48 +278,72 @@ def predict_hidden_salary(
     Returns:
         dict with predicted_min_vnd, predicted_max_vnd, confidence, label
     """
+    results = predict_hidden_salaries([{
+        "title": title,
+        "city": city,
+        "level": level,
+        "work_mode": work_mode,
+        "skills": skills,
+    }])
+    return results[0] if results else {"error": "Salary prediction failed"}
+
+
+def predict_hidden_salaries(jobs: list[dict]) -> list[dict]:
+    """Predict many salaries in one vectorized model call.
+
+    Loading a job list used to call the Random Forest once per row. A 50-job
+    response therefore ran up to 100 separate forest predictions. Encoding and
+    predicting the whole matrix once keeps API latency stable.
+    """
+    if not jobs:
+        return []
+
     try:
         model_bundle = _load_model()
-    except FileNotFoundError as e:
-        return {"error": str(e)}
+    except FileNotFoundError as exc:
+        return [{"error": str(exc)} for _ in jobs]
 
-    title_cat = _categorize_title(title)
-    top_sk = _extract_top_skills(skills) if skills else ""
+    rows = []
+    for job in jobs:
+        rows.append([
+            _categorize_title(job.get("title", "")),
+            job.get("city") or "unknown",
+            job.get("level") or "unknown",
+            job.get("work_mode") or "unknown",
+            _extract_top_skills(job.get("skills", "")),
+        ])
 
-    X_input = np.array([[title_cat, city, level, work_mode, top_sk]])
-
-    # Predict min salary
+    X_input = np.asarray(rows, dtype=object)
     X_enc_min = model_bundle["encoder_min"].transform(X_input)
-    pred_min = model_bundle["rf_min"].predict(X_enc_min)[0]
-
-    # Predict max salary
     X_enc_max = model_bundle["encoder_max"].transform(X_input)
-    pred_max = model_bundle["rf_max"].predict(X_enc_max)[0]
+    predicted_min = model_bundle["rf_min"].predict(X_enc_min)
+    predicted_max = model_bundle["rf_max"].predict(X_enc_max)
 
-    # Ensure min <= max
-    if pred_min > pred_max:
-        pred_min, pred_max = pred_max, pred_min
-
-    # Round to nearest million VND
-    pred_min = max(0, round(pred_min / 1_000_000) * 1_000_000)
-    pred_max = max(pred_min, round(pred_max / 1_000_000) * 1_000_000)
-
-    # Confidence based on R² scores
     avg_r2 = (model_bundle["r2_min"] + model_bundle["r2_max"]) / 2
     confidence = round(max(0, min(1, avg_r2)), 2)
-
-    return {
-        "predicted_min_vnd": int(pred_min),
-        "predicted_max_vnd": int(pred_max),
-        "predicted_min_trieu": round(pred_min / 1_000_000, 1),
-        "predicted_max_trieu": round(pred_max / 1_000_000, 1),
-        "confidence": confidence,
-        "label": "AI Predicted",
-        "model_info": {
-            "training_samples": model_bundle["training_samples"],
-            "trained_at": model_bundle["trained_at"],
-        },
+    model_info = {
+        "training_samples": model_bundle["training_samples"],
+        "trained_at": model_bundle["trained_at"],
     }
+
+    results = []
+    for pred_min, pred_max in zip(predicted_min, predicted_max):
+        if pred_min > pred_max:
+            pred_min, pred_max = pred_max, pred_min
+
+        pred_min = max(0, round(pred_min / 1_000_000) * 1_000_000)
+        pred_max = max(pred_min, round(pred_max / 1_000_000) * 1_000_000)
+        results.append({
+            "predicted_min_vnd": int(pred_min),
+            "predicted_max_vnd": int(pred_max),
+            "predicted_min_trieu": round(pred_min / 1_000_000, 1),
+            "predicted_max_trieu": round(pred_max / 1_000_000, 1),
+            "confidence": confidence,
+            "label": "AI Predicted",
+            "model_info": model_info,
+        })
+
+    return results
 
 
 # Airflow-callable entry point

@@ -15,8 +15,6 @@ Tools:
 
 import os
 import json
-import base64
-import io
 from pathlib import Path
 from datetime import datetime
 
@@ -26,60 +24,55 @@ except ImportError:
     def load_dotenv(*_args, **_kwargs):
         return False
 
-from ai.observability import timed_ai_event
-from ai.skills import load_skills, render_full_skills, render_skill_index
+from ai.observability import log_ai_event, timed_ai_event
+from ai.llm_provider import create_chat_model, get_provider_chain
+from ai.skills import load_skills, render_full_skills, render_skill_index, select_skills
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-GROQ_MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+LLM_PROVIDER_CHAIN = get_provider_chain()
 
 # ── In-memory chat history (per session) ─────────────────────────────────────
 _chat_histories: dict[str, list] = {}
-MAX_HISTORY = 20
+MAX_HISTORY = 6
 
 
 # ============================================================
 # SYSTEM PROMPT
 # ============================================================
-SYSTEM_PROMPT = """Bạn là **TechJob AI Assistant** — một chuyên gia phân tích thị trường tuyển dụng IT tại Việt Nam.
+SYSTEM_PROMPT = """Bạn là **TechJob AI Assistant** — chuyên gia phân tích thị trường tuyển dụng IT Việt Nam.
 
-## NĂNG LỰC CỦA BẠN
-Bạn có quyền truy cập vào cơ sở dữ liệu tuyển dụng IT thực tế từ VietnamWorks, bao gồm:
-- Hàng nghìn tin tuyển dụng IT với thông tin chi tiết (vị trí, lương, kỹ năng, địa điểm)
-- Dữ liệu thống kê về xu hướng tuyển dụng, mức lương trung bình
-- Đánh giá văn hóa công ty từ nhân viên
-- Mô hình AI dự đoán lương cho các vị trí ẩn lương
+## CÔNG CỤ CÓ SẴN
+1. **execute_sql_tool**: Trên Data Warehouse PostgreSQL (chỉ SELECT)
+2. **execute_rag_culture_tool**: Tìm kiếm văn hóa công ty
+3. **semantic_search_tool**: Tìm việc theo ngữ nghĩa
+4. **predict_salary_tool**: Dự đoán lương ẩn
+5. **generate_chart_tool**: Vẽ biểu đồ trực quan
 
-## CÔNG CỤ SẴN CÓ
-1. **execute_sql_tool**: Truy vấn SQL trực tiếp vào data warehouse (chỉ SELECT)
-2. **execute_rag_culture_tool**: Tra cứu đánh giá văn hóa, môi trường làm việc của công ty
-3. **semantic_search_tool**: Tìm kiếm việc làm theo ngữ nghĩa (hiểu ý nghĩa, không chỉ từ khóa)
-4. **predict_salary_tool**: Dự đoán mức lương cho vị trí ẩn lương
-5. **generate_chart_tool**: Tạo biểu đồ trực quan hóa dữ liệu
+## DATABASE SCHEMA
+Bảng chính:
+- `warehouse_warehouse.fact_job_postings`: job_id, company_id, job_title, job_level_id, salary_min, salary_max, is_salary_visible, created_on, working_locations (JSONB), skills (JSONB)
+- `warehouse_warehouse.dim_company`: company_id, company_name
 
-## CƠ SỞ DỮ LIỆU
-Bảng chính: `warehouse_warehouse.fact_job_postings` JOIN với `warehouse_warehouse.dim_company` qua `company_id`.
-- Cột quan trọng trong `fact_job_postings`: job_id, job_title, salary_min, salary_max, working_locations, skills, created_on.
-- Cột quan trọng trong `dim_company`: company_name.
+WORKING_LOCATIONS và SKILLS là JSONB — dùng `::text ILIKE '%từ khóa%'` khi tìm kiếm.
 
-Bảng thống kê:
-- `warehouse_marts.mart_skill_demand` (skill_name, job_count)
-- `warehouse_marts.mart_salary_benchmark` (skill_name, level_name_vi, median_salary_min, median_salary_max, sample_size)
+Market marts:
+- `warehouse_marts.mart_skill_demand` (skill_id, skill_name, week_start, job_count)
+- `warehouse_marts.mart_location_demand` (city_id, city_name, job_count)
+- `warehouse_marts.mart_salary_benchmark` (skill_id, skill_name, job_level_id, level_name_vi, median_salary_min, median_salary_max, sample_size) — toàn quốc, không có city.
 
 ## QUY TẮC
-1. Luôn trả lời bằng tiếng Việt (trừ khi user yêu cầu tiếng Anh)
-2. Khi cần dữ liệu, hãy sử dụng công cụ thay vì đoán
-3. Trình bày kết quả rõ ràng, có cấu trúc (bullet points, bảng)
-4. Khi so sánh số liệu, hãy tạo biểu đồ để trực quan hóa
-5. Đơn vị lương: triệu VND/tháng (chia salary_min_vnd hoặc salary_max_vnd cho 1000000)
-6. Hãy chủ động phân tích và đưa ra nhận xét chuyên sâu, không chỉ liệt kê số liệu
+1. Trả lời Tiếng Việt (trừ khi user yêu cầu tiếng Anh)
+2. Dùng công cụ khi cần dữ liệu, không đoán
+3. Lương đơn vị triệu VND/tháng (chia salary_min/max cho 1000000)
+4. SQL so sánh: SELECT top 5 kết quả, GROUP BY
+5. generate_chart_tool: values phải là list[str] số thực (không được null)
 """
 
 
 def build_system_prompt() -> str:
-    """Build the agent prompt with project skill playbooks."""
+    """Build a compact prompt with skill discovery, not every full playbook."""
     skills = load_skills()
     if not skills:
         return SYSTEM_PROMPT
@@ -87,13 +80,22 @@ def build_system_prompt() -> str:
     return (
         SYSTEM_PROMPT
         + "\n\n## PROJECT SKILLS\n"
-        + "You have access to these project skill playbooks. "
-        + "When a user request matches a skill, follow that skill's workflow, "
-        + "response format, and guardrails.\n\n"
-        + "### Available skills\n"
+        + "Danh sách skill khả dụng. Nội dung đầy đủ của skill phù hợp sẽ được "
+        + "đính kèm riêng theo từng yêu cầu; không tự giả định skill khác.\n\n"
         + render_skill_index(skills)
-        + "\n\n### Skill playbooks\n"
-        + render_full_skills(skills)
+    )
+
+
+def enrich_message_with_skills(message: str) -> str:
+    """Attach only playbooks relevant to the current request."""
+    selected = select_skills(message, max_skills=2)
+    if not selected:
+        return message
+    return (
+        message
+        + "\n\n<relevant_project_skills>\n"
+        + render_full_skills(selected)
+        + "\n</relevant_project_skills>"
     )
 
 
@@ -109,26 +111,34 @@ def _make_tools():
     @tool
     def execute_sql_tool(sql: str) -> str:
         """Execute a read-only SQL SELECT query against the TechJob AI data warehouse.
-        The database contains job postings, salary data, skills, and company info.
-        Tables: warehouse_warehouse.fact_job_postings, warehouse_warehouse.dim_company, 
-        warehouse_marts.mart_skill_demand, warehouse_marts.mart_salary_benchmark.
-        Key columns in fact_job_postings: job_id, company_id, job_title, salary_min, salary_max, working_locations, created_on.
+        Schema:
+        - warehouse_warehouse.fact_job_postings: job_id, company_id, job_title, salary_min, salary_max, is_salary_visible, job_level_id, created_on, working_locations, skills
+        - warehouse_warehouse.dim_company: company_id, company_name
+        - warehouse_marts.mart_skill_demand: skill_id, skill_name, week_start, job_count
+        - warehouse_marts.mart_location_demand: city_id, city_name, job_count
+        - warehouse_marts.mart_salary_benchmark: skill_id, skill_name, job_level_id, level_name_vi, median_salary_min, median_salary_max, sample_size
         Only SELECT/WITH queries allowed. DELETE/UPDATE/DROP are blocked."""
         result = execute_sql(sql)
-        if isinstance(result, list):
-            # Truncate long strings to prevent context_length_exceeded
-            for row in result:
-                if isinstance(row, dict):
-                    for k, v in row.items():
-                        if isinstance(v, str) and len(v) > 200:
-                            row[k] = v[:200] + "... [TRUNCATED]"
-
-            if len(result) > 5:
-                truncated_data = {
-                    "notice": f"Kết quả quá lớn ({len(result)} dòng). Chỉ hiển thị 5 dòng đầu để tiết kiệm tokens.",
-                    "data": result[:5]
-                }
-                return json.dumps(truncated_data, ensure_ascii=False, default=str)
+        if isinstance(result, dict) and isinstance(result.get("rows"), list):
+            rows = result["rows"]
+            compact_rows = []
+            for row in rows[:10]:
+                compact_rows.append({
+                    key: value[:300] + "... [TRUNCATED]"
+                    if isinstance(value, str) and len(value) > 300
+                    else value
+                    for key, value in row.items()
+                })
+            result = {
+                "columns": result.get("columns", []),
+                "rows": compact_rows,
+                "row_count": result.get("row_count", len(rows)),
+                "truncated_for_llm": len(rows) > 10 or result.get("truncated", False),
+                "notice": (
+                    "Agent context is limited to the first 10 rows. "
+                    "Use aggregate SQL for summaries."
+                ),
+            }
         return json.dumps(result, ensure_ascii=False, default=str)
 
     @tool
@@ -140,7 +150,7 @@ def _make_tools():
         return json.dumps(result, ensure_ascii=False, default=str)
 
     @tool
-    def semantic_search_tool(query: str, limit: str = "10") -> str:
+    def semantic_search_tool(query: str, limit: int = 10) -> str:
         """Search for IT jobs using semantic similarity (understands meaning, not just keywords).
         Example: searching 'machine learning' will also find 'AI engineer' or 'data scientist' roles.
         Returns job titles, companies, salaries, and similarity scores."""
@@ -148,10 +158,7 @@ def _make_tools():
         from be.mcp_server import _get_readonly_conn
         import psycopg2.extras
 
-        try:
-            limit_val = int(limit)
-        except ValueError:
-            limit_val = 10
+        limit_val = max(1, min(int(limit), 20))
 
         # Cache model globally to avoid reloading on every call
         if not hasattr(semantic_search_tool, "_model"):
@@ -206,62 +213,34 @@ def _make_tools():
         chart_type: str,
         title: str,
         labels: list[str],
-        values: list[float],
+        values: list[str],
         ylabel: str = "Giá trị",
     ) -> str:
-        """Generate an inline chart image for data visualization in the chat.
+        """Create a compact chart specification for frontend visualization.
         chart_type: 'bar', 'line', 'pie', or 'horizontal_bar'.
-        Returns a base64-encoded PNG image string.
+        labels: list of string labels.
+        values: list of numeric values as strings (e.g. ["25.5", "32.0", "40"]). MUST be non-null numbers.
         Use this when comparing data visually (e.g., salary comparison, skill popularity)."""
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
+        clean_labels, clean_values = [], []
+        for lbl, val in zip(labels, values):
+            try:
+                fval = float(val) if val is not None else None
+                if fval is not None:
+                    clean_labels.append(lbl)
+                    clean_values.append(fval)
+            except (TypeError, ValueError):
+                pass
 
-        fig, ax = plt.subplots(figsize=(10, 6))
-        fig.patch.set_facecolor("#1a1a2e")
-        ax.set_facecolor("#16213e")
+        if not clean_values:
+            return json.dumps({"error": "No numeric data to chart"})
 
-        colors = ["#e94560", "#0f3460", "#533483", "#00b4d8", "#06d6a0",
-                   "#90e0ef", "#ffc300", "#ef476f", "#118ab2", "#073b4c"]
-
-        if chart_type == "bar":
-            bars = ax.bar(labels, values, color=colors[:len(labels)], edgecolor="white", linewidth=0.5)
-            ax.bar_label(bars, fmt="%.1f", color="white", fontsize=10)
-        elif chart_type == "horizontal_bar":
-            bars = ax.barh(labels, values, color=colors[:len(labels)], edgecolor="white", linewidth=0.5)
-            ax.bar_label(bars, fmt="%.1f", color="white", fontsize=10)
-        elif chart_type == "line":
-            ax.plot(labels, values, color="#e94560", marker="o", linewidth=2, markersize=8)
-            ax.fill_between(range(len(labels)), values, alpha=0.15, color="#e94560")
-        elif chart_type == "pie":
-            ax.pie(values, labels=labels, colors=colors[:len(labels)],
-                   autopct="%1.1f%%", textprops={"color": "white", "fontsize": 10})
-
-        ax.set_title(title, color="white", fontsize=14, fontweight="bold", pad=15)
-        if chart_type != "pie":
-            ax.set_ylabel(ylabel, color="white", fontsize=11)
-            ax.tick_params(colors="white", labelsize=9)
-            ax.spines["bottom"].set_color("#333")
-            ax.spines["left"].set_color("#333")
-            ax.spines["top"].set_visible(False)
-            ax.spines["right"].set_visible(False)
-            ax.grid(axis="y", alpha=0.15, color="white")
-            plt.xticks(rotation=30, ha="right")
-
-        plt.tight_layout()
-
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=120, bbox_inches="tight",
-                    facecolor=fig.get_facecolor())
-        plt.close(fig)
-        buf.seek(0)
-
-        img_b64 = base64.b64encode(buf.read()).decode("utf-8")
         return json.dumps({
             "chart_type": chart_type,
             "title": title,
-            "image_base64": img_b64,
-        })
+            "labels": clean_labels[:20],
+            "values": clean_values[:20],
+            "ylabel": ylabel,
+        }, ensure_ascii=False)
 
     return [execute_sql_tool, execute_rag_culture_tool, semantic_search_tool,
             predict_salary_tool, generate_chart_tool]
@@ -271,39 +250,35 @@ def _make_tools():
 # AGENT CREATION
 # ============================================================
 
-_agent_executor = None
+_agent_executors = {}
 
 
-def _get_agent():
-    """Create or return cached LangGraph ReAct agent using Groq."""
-    global _agent_executor
+def _get_agent(provider_index: int = 0):
+    """Create or return a cached ReAct agent for one provider slot."""
+    if provider_index in _agent_executors:
+        return _agent_executors[provider_index]
 
-    if _agent_executor is not None:
-        return _agent_executor
+    if provider_index >= len(LLM_PROVIDER_CHAIN):
+        raise RuntimeError("No more LLM providers are configured")
+    provider, _, api_key = LLM_PROVIDER_CHAIN[provider_index]
+    if not api_key:
+        raise RuntimeError(f"API key not configured for LLM provider '{provider}'.")
 
-    if not GROQ_API_KEY:
-        raise RuntimeError(
-            "GROQ_API_KEY not configured. Set it in .env file to use the AI Agent."
-        )
-
-    from langchain_groq import ChatGroq
     from langgraph.prebuilt import create_react_agent
 
-    llm = ChatGroq(
-        model=GROQ_MODEL,
-        temperature=0.3,
-        api_key=GROQ_API_KEY,
+    llm = create_chat_model(
+        provider_index=provider_index,
+        temperature=0.2,
+        max_tokens=2048,
     )
 
     tools = _make_tools()
+    system_prompt = build_system_prompt()
 
-    _agent_executor = create_react_agent(
-        llm,
-        tools,
-        prompt=build_system_prompt(),
+    _agent_executors[provider_index] = create_react_agent(
+        llm, tools, prompt=system_prompt
     )
-
-    return _agent_executor
+    return _agent_executors[provider_index]
 
 
 # ============================================================
@@ -323,7 +298,27 @@ async def chat(message: str, session_id: str = "default") -> dict:
         'tools_used' (list of tool names called).
     """
     with timed_ai_event("chat", session_id=session_id, message_chars=len(message)) as event:
-        agent = _get_agent()
+        from ai.market_insight import handle_market_insight
+        from ai.salary_analysis import handle_salary_comparison
+
+        deterministic_result = (
+            handle_salary_comparison(message)
+            or handle_market_insight(message)
+        )
+        if deterministic_result is not None:
+            history = _chat_histories.setdefault(session_id, [])
+            history.append({"role": "user", "content": message})
+            history.append({
+                "role": "assistant",
+                "content": deterministic_result["response"],
+            })
+            if len(history) > MAX_HISTORY * 2:
+                _chat_histories[session_id] = history[-MAX_HISTORY * 2:]
+            event["route"] = "deterministic_analysis"
+            event["tools_used"] = ",".join(deterministic_result["tools_used"])
+            event["response_chars"] = len(deterministic_result["response"])
+            event["charts"] = len(deterministic_result["charts"])
+            return {**deterministic_result, "session_id": session_id}
 
         # Build messages with history
         if session_id not in _chat_histories:
@@ -334,10 +329,59 @@ async def chat(message: str, session_id: str = "default") -> dict:
         messages = []
         for msg in history[-MAX_HISTORY:]:
             messages.append(msg)
-        messages.append({"role": "user", "content": message})
+        messages.append({"role": "user", "content": enrich_message_with_skills(message)})
 
-        # Invoke agent
-        result = await agent.ainvoke({"messages": messages})
+        # Try every configured provider in order.
+        result = None
+        errors = []
+        for provider_index, (provider, model, api_key) in enumerate(LLM_PROVIDER_CHAIN):
+            if not api_key:
+                errors.append(f"{provider}: missing API key")
+                continue
+            try:
+                agent = _get_agent(provider_index)
+                request_messages = messages if provider_index == 0 else messages[-3:]
+                candidate_result = await agent.ainvoke({"messages": request_messages})
+                ai_messages = [
+                    item for item in candidate_result.get("messages", [])
+                    if getattr(item, "type", "") == "ai"
+                ]
+                final_ai = ai_messages[-1] if ai_messages else None
+                final_text = getattr(final_ai, "content", "") if final_ai else ""
+                finish_reason = (
+                    getattr(final_ai, "response_metadata", {}).get("finish_reason")
+                    if final_ai else None
+                )
+                if not isinstance(final_text, str) or not final_text.strip():
+                    raise RuntimeError(
+                        "Provider completed without a final text response"
+                    )
+                if finish_reason in {"length", "max_tokens"}:
+                    raise RuntimeError(
+                        "Provider truncated the response at its output-token limit"
+                    )
+                result = candidate_result
+                event["llm_provider"] = provider
+                event["llm_model"] = model
+                break
+            except Exception as provider_error:
+                errors.append(f"{provider}: {type(provider_error).__name__}")
+                next_provider = (
+                    LLM_PROVIDER_CHAIN[provider_index + 1][0]
+                    if provider_index + 1 < len(LLM_PROVIDER_CHAIN)
+                    else "-"
+                )
+                log_ai_event(
+                    "chat.model_fallback",
+                    session_id=session_id,
+                    failed_provider=provider,
+                    failed_model=model,
+                    next_provider=next_provider,
+                    error_type=type(provider_error).__name__,
+                    error=str(provider_error)[:300],
+                )
+        if result is None:
+            raise RuntimeError("All LLM providers failed: " + "; ".join(errors))
 
         # Extract response
         response_text = ""
@@ -351,7 +395,7 @@ async def chat(message: str, session_id: str = "default") -> dict:
                 elif msg.type == "tool" and hasattr(msg, "content"):
                     try:
                         tool_result = json.loads(msg.content)
-                        if isinstance(tool_result, dict) and "image_base64" in tool_result:
+                        if isinstance(tool_result, dict) and "chart_type" in tool_result:
                             charts.append(tool_result)
                     except (json.JSONDecodeError, TypeError):
                         pass

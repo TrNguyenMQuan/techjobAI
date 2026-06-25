@@ -128,7 +128,7 @@ function FilterPanel({ filters, onChange, onClear }) {
 
 // ─── Main Job List page ───────────────────────────────────────────────────────
 export default function JobList() {
-  const { jobs, setJobs, settings } = useApp()
+  const { jobs, setJobs } = useApp()
   const [searchParams] = useSearchParams()
   const queryParam = searchParams.get('q') || ''
 

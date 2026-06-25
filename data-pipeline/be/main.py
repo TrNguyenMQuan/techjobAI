@@ -12,9 +12,9 @@ import psycopg2
 import psycopg2.extras
 import json
 import os
+import threading
 from pathlib import Path
 from dotenv import load_dotenv
-from sentence_transformers import SentenceTransformer
 from ai.observability import log_ai_event, timed_ai_event
 
 # Load env from data-pipeline/.env
@@ -30,18 +30,27 @@ DB_SSLMODE = "require" if os.getenv("NEON_HOST") else os.getenv("PGSSLMODE", "pr
 
 # Model for semantic search (cached globally)
 _search_model = None
+_search_model_lock = threading.Lock()
 
 def get_model():
     global _search_model
     if _search_model is None:
-        _search_model = SentenceTransformer("all-MiniLM-L6-v2")
+        with _search_model_lock:
+            if _search_model is None:
+                from sentence_transformers import SentenceTransformer
+                _search_model = SentenceTransformer("all-MiniLM-L6-v2")
     return _search_model
 
 def get_conn():
     return psycopg2.connect(
         host=DB_HOST, port=int(DB_PORT),
         user=DB_USER, password=DB_PASS,
-        dbname=DB_NAME, sslmode=DB_SSLMODE
+        dbname=DB_NAME, sslmode=DB_SSLMODE,
+        connect_timeout=8,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
     )
 
 # ============================================================
@@ -59,7 +68,21 @@ db_pool = None
 @app.on_event("startup")
 def startup():
     global db_pool
-    db_pool = pool.SimpleConnectionPool(1, 20, host=DB_HOST, port=int(DB_PORT), user=DB_USER, password=DB_PASS, dbname=DB_NAME, sslmode=DB_SSLMODE)
+    db_pool = pool.ThreadedConnectionPool(
+        1,
+        10,
+        host=DB_HOST,
+        port=int(DB_PORT),
+        user=DB_USER,
+        password=DB_PASS,
+        dbname=DB_NAME,
+        sslmode=DB_SSLMODE,
+        connect_timeout=8,
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
+    )
 
 @app.on_event("shutdown")
 def shutdown():
@@ -67,8 +90,29 @@ def shutdown():
 
 def get_db():
     conn = db_pool.getconn()
-    try: yield conn
-    finally: db_pool.putconn(conn)
+    discard = False
+    try:
+        # Neon may close an idle SSL connection while it is still present in
+        # the local pool. Validate before handing it to an endpoint.
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+            conn.rollback()
+        except (psycopg2.InterfaceError, psycopg2.OperationalError):
+            db_pool.putconn(conn, close=True)
+            conn = db_pool.getconn()
+        yield conn
+    except (psycopg2.InterfaceError, psycopg2.OperationalError):
+        discard = True
+        raise
+    finally:
+        if not conn.closed:
+            try:
+                conn.rollback()
+            except psycopg2.Error:
+                discard = True
+        db_pool.putconn(conn, close=discard or bool(conn.closed))
 
 
 app.add_middleware(
@@ -96,13 +140,27 @@ def root(conn = Depends(get_db)):
 @app.get("/api/health/ai")
 def ai_health(conn = Depends(get_db)):
     """Lightweight AI system health without calling the LLM or database."""
+    from ai.llm_provider import get_provider_chain
     from ai.skills import load_skills
     from be.mcp_server import get_tool_definitions
 
+    provider_chain = get_provider_chain()
+    providers = [
+        {
+            "priority": index + 1,
+            "provider": provider,
+            "model": model,
+            "configured": bool(api_key),
+        }
+        for index, (provider, model, api_key) in enumerate(provider_chain)
+    ]
+    primary = providers[0] if providers else {}
     return {
         "status": "ok",
-        "groq_configured": bool(GROQ_API_KEY),
-        "model": GROQ_MODEL,
+        "llm_configured": any(item["configured"] for item in providers),
+        "provider": primary.get("provider"),
+        "model": primary.get("model"),
+        "provider_chain": providers,
         "embedding_model": "all-MiniLM-L6-v2",
         "skills_count": len(load_skills()),
         "mcp_tools": [tool["name"] for tool in get_tool_definitions()],

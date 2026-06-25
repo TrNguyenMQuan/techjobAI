@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../services/api'
 import clsx from 'clsx'
@@ -50,6 +50,7 @@ export default function JobCard({ job, compact = false }) {
 
   const [aiSalary, setAiSalary] = useState(job.aiEstimatedSalary)
   const [loadingAi, setLoadingAi] = useState(false)
+  const salaryRequested = useRef(false)
 
   // Show at most 4 skills, rest collapsed to "+N"
   const MAX_TAGS = 4
@@ -60,7 +61,8 @@ export default function JobCard({ job, compact = false }) {
 
   useEffect(() => {
     // If setting is ON, and we don't have it yet, and this job is missing salary
-    if (settings.salaryEstimate && !aiSalary && showAIEstimate && !loadingAi) {
+    if (settings.salaryEstimate && !aiSalary && showAIEstimate && !salaryRequested.current) {
+      salaryRequested.current = true
       setLoadingAi(true)
       const skillsParam = Array.isArray(job.skills) ? job.skills.join(',') : ''
       api.post('/predict-salary', null, {

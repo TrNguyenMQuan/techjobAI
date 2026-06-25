@@ -2,7 +2,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import {
   MapPin, Clock, Bookmark, Share2, ExternalLink,
-  ChevronRight, Bot, Calendar, Users, Briefcase,
+  ChevronRight, Bot, Calendar, Briefcase,
 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { getJobById, getRelatedJobs } from '../services/jobService'

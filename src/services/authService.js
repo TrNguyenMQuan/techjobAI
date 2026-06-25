@@ -27,6 +27,12 @@ function parseTokenUserId(token) {
   return token.split('_')[1]
 }
 
+function withoutPassword(user) {
+  const safeUser = { ...user }
+  delete safeUser.password
+  return safeUser
+}
+
 export function getStoredToken() {
   return localStorage.getItem(TOKEN_KEY)
 }
@@ -50,8 +56,7 @@ export async function login({ email, password }) {
     }
     const token = createToken(user.id)
     setStoredToken(token)
-    const { password: _, ...safeUser } = user
-    return { token, user: safeUser }
+    return { token, user: withoutPassword(user) }
   }
   const { data } = await api.post('/auth/login', { email, password })
   setStoredToken(data.token)
@@ -71,8 +76,7 @@ export async function register({ name, email, password }) {
     saveMockUsers(users)
     const token = createToken(user.id)
     setStoredToken(token)
-    const { password: _, ...safeUser } = user
-    return { token, user: safeUser }
+    return { token, user: withoutPassword(user) }
   }
   const { data } = await api.post('/auth/register', { name, email, password })
   setStoredToken(data.token)
@@ -90,8 +94,7 @@ export async function getCurrentUser() {
     if (!userId) return null
     const user = getMockUsers().find(u => u.id === userId)
     if (!user) return null
-    const { password: _, ...safeUser } = user
-    return safeUser
+    return withoutPassword(user)
   }
   const { data } = await api.get('/auth/me')
   return data

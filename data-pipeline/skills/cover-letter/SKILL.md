@@ -24,5 +24,9 @@ Use this skill when the user asks to create, rewrite, improve, or evaluate a cov
 ## Guardrails
 
 - Do not hallucinate years of experience, employers, degrees, certifications, or achievements.
+- Treat the job description as employer requirements, not evidence that the candidate has those skills.
+- Do not infer distributed systems, scalability, production experience, protocols, industry experience, or business impact from a small academic project.
+- Preserve the candidate's name exactly as written in the CV.
+- Avoid placeholders, duplicate contact headers, dates, subject lines, Markdown fences, and exaggerated words such as "mastered", "expert", or "top-tier".
 - Do not include private personal data unless the user provided it.
 - Keep claims verifiable from the CV/profile or user-provided notes.

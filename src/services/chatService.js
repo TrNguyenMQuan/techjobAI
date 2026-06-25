@@ -51,10 +51,10 @@ export async function sendChatMessage(text, _history = []) {
         timeout: CHAT_TIMEOUT_MS,
       })
       return {
-        type: 'mixed',
+        type: data.tools_used?.includes('semantic_search_tool') ? 'vector' : 'data',
         content: data.response,
         jobCards: [],
-        showChart: data.tools_used && data.tools_used.includes('generate_chart_tool'),
+        showChart: (data.charts?.length || 0) > 0,
         toolsUsed: data.tools_used || [],
         charts: data.charts || [],
       }
