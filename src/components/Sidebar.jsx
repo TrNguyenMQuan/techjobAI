@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import {
-  LayoutDashboard, Search, Bot, TrendingUp, User,
+  LayoutDashboard, Search, Bot, User,
   Settings, HelpCircle, FileText, X,
 } from 'lucide-react'
 
@@ -9,7 +9,6 @@ const NAV_ITEMS = [
   { to: '/dashboard',   icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/jobs',        icon: Search,          label: 'Job Search' },
   { to: '/chat',        icon: Bot,             label: 'AI Assistant' },
-  { to: '/market',      icon: TrendingUp,      label: 'Market Insights' },
   { to: '/profile',     icon: User,            label: 'Profile' },
 ]
 const BOTTOM_ITEMS = [

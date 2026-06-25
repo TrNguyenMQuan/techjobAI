@@ -243,22 +243,3 @@ export function TrendLineChart({ data }) {
     </ResponsiveContainer>
   )
 }
-
-// ─── Market Insights: Salary Comparison stacked bar ─────────────────────────
-export function MarketSalaryChart({ data }) {
-  return (
-    <ResponsiveContainer width="100%" height={200}>
-      <BarChart data={data} margin={{ top: 4, right: 8, left: -16, bottom: 0 }} barGap={2}>
-        <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
-        <XAxis dataKey="stack" tick={{ fontSize: 10, fill: '#9CA3AF' }} tickLine={false} axisLine={false} />
-        <YAxis tick={{ fontSize: 10, fill: '#9CA3AF' }} tickLine={false} axisLine={false}
-          tickFormatter={v => `$${(v/1000).toFixed(0)}k`} />
-        <Tooltip content={<ChartTooltip />} cursor={{ fill: '#F8F7FF' }} />
-        <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: 11, paddingTop: 6 }} />
-        <Bar dataKey="junior" name="Junior" stackId="a" fill="#C4B5FD" radius={[0,0,0,0]} maxBarSize={24} />
-        <Bar dataKey="mid"    name="Mid"    stackId="a" fill="#7C3AED" maxBarSize={24} />
-        <Bar dataKey="senior" name="Senior" stackId="a" fill="#10B981" radius={[4,4,0,0]} maxBarSize={24} />
-      </BarChart>
-    </ResponsiveContainer>
-  )
-}

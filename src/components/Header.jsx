@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import clsx from 'clsx'
 import { Bell, HelpCircle, Menu, Sparkles, Search, Clock, LogOut, User as UserIcon, Settings } from 'lucide-react'
 import { useApp } from '../context/AppContext'
+import { useAuth } from '../context/AuthContext'
 import { Avatar } from './ui'
 
 const RECENT_SEARCHES = [
@@ -21,7 +22,14 @@ export default function Header({ sidebarCollapsed, onMenuToggle }) {
   const [focused, setFocused]       = useState(false)
   const [showUser, setShowUser]     = useState(false)
   const { notifications, profile }  = useApp()
+  const { logout } = useAuth()
   const navigate = useNavigate()
+
+  const handleLogout = async () => {
+    setShowUser(false)
+    await logout()
+    navigate('/login', { replace: true })
+  }
 
   const handleSearch = (q) => {
     const term = q || query
@@ -163,7 +171,10 @@ export default function Header({ sidebarCollapsed, onMenuToggle }) {
                   <HelpCircle size={14} /> Trợ giúp
                 </button>
                 <div className="border-t border-gray-100 mt-1 pt-1">
-                  <button className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors">
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-500 hover:bg-red-50 transition-colors"
+                  >
                     <LogOut size={14} /> Đăng xuất
                   </button>
                 </div>

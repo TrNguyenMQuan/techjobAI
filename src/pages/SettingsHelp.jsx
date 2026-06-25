@@ -160,7 +160,6 @@ const HELP_CATEGORIES = [
   { icon: '🤖', title: 'AI Assistant Tips',   desc: 'Maximize prompt effectiveness and AI cover letter generation.' },
   { icon: '🔍', title: 'Job Search & Filters', desc: 'Understanding semantic search and setting up custom job alerts.' },
   { icon: '📄', title: 'Profile & CV Management', desc: 'Updating your resume, managing privacy, and profile visibility.' },
-  { icon: '📊', title: 'Market Insights Explained', desc: 'How to interpret salary data, skill trends, and market graphs.' },
   { icon: '🛡️', title: 'Account & Security',  desc: 'Password resets, data privacy policies, and security settings.' },
 ]
 
