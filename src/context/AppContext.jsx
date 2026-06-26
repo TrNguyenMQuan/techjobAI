@@ -14,8 +14,70 @@ function loadJSON(key, fallback) {
   } catch { return fallback }
 }
 
+function hasStoredValue(key) {
+  return localStorage.getItem(key) !== null
+}
+
 function saveJSON(key, value) {
   localStorage.setItem(key, JSON.stringify(value))
+}
+
+function createFreshProfile(user) {
+  const isDemoUser = user?.email === 'demo@techjob.ai'
+  if (!user || isDemoUser) return { ...MOCK_PROFILE, onboardingCompleted: true }
+
+  return {
+    ...MOCK_PROFILE,
+    name: user.name || '',
+    title: '',
+    email: user.email || '',
+    phone: '',
+    location: '',
+    nationality: '',
+    gender: '',
+    dob: '',
+    about: '',
+    socialLinks: {
+      facebook: '',
+      github: '',
+      linkedin: '',
+      website: '',
+    },
+    completeness: 20,
+    completenessHint: 'Complete your personal information to unlock the dashboard',
+    skills: [],
+    preferences: {
+      ...MOCK_PROFILE.preferences,
+      position: '',
+      locations: [],
+      workTypes: [],
+    },
+    onboardingCompleted: false,
+  }
+}
+
+function buildProfileForUser(user, storedProfile, hasStoredProfile) {
+  const isDemoUser = user?.email === 'demo@techjob.ai'
+  const hasStoredOnboarding = storedProfile
+    ? Object.prototype.hasOwnProperty.call(storedProfile, 'onboardingCompleted')
+    : false
+
+  const baseProfile = hasStoredProfile
+    ? { ...MOCK_PROFILE, ...storedProfile }
+    : createFreshProfile(user)
+
+  if (user) {
+    const shouldUseAuthName =
+      !hasStoredProfile || !baseProfile.name || baseProfile.name === MOCK_PROFILE.name
+    const shouldUseAuthEmail =
+      !hasStoredProfile || !baseProfile.email || baseProfile.email === MOCK_PROFILE.email
+
+    if (shouldUseAuthName) baseProfile.name = user.name
+    if (shouldUseAuthEmail) baseProfile.email = user.email
+    if (!hasStoredOnboarding) baseProfile.onboardingCompleted = isDemoUser
+  }
+
+  return baseProfile
 }
 
 // ── Provider ────────────────────────────────────────────────────────────────────
@@ -27,6 +89,7 @@ export function AppProvider({ children }) {
   const [savedJobIds, setSavedJobIds]       = useState(new Set())
   const [savedJobs, setSavedJobs]           = useState([])
   const [profile, setProfile]               = useState(MOCK_PROFILE)
+  const [profileOwnerId, setProfileOwnerId] = useState(null)
   const [cvFiles, setCvFiles]               = useState([])
   const [settings, setSettings]             = useState({
     semanticSearch: true, salaryEstimate: true,
@@ -37,12 +100,19 @@ export function AppProvider({ children }) {
 
   // ── Reload user-specific data when userId changes ──────────────────────────
   useEffect(() => {
+    const profileKey = sKey('profile', userId)
+    const hasStoredProfile = hasStoredValue(profileKey)
+    const storedProfile = loadJSON(profileKey, null)
+    const nextProfile = buildProfileForUser(user, storedProfile, hasStoredProfile)
+
     setSavedJobIds(new Set(loadJSON(sKey('saved_ids', userId), [])))
     setSavedJobs(loadJSON(sKey('saved_jobs', userId), []))
-    setProfile(loadJSON(sKey('profile', userId), MOCK_PROFILE))
+    setProfile(nextProfile)
+    setProfileOwnerId(userId)
+    saveJSON(profileKey, nextProfile)
     setCvFiles(loadJSON(sKey('cv_files', userId), []))
     setSettings(prev => loadJSON(sKey('settings', userId), prev))
-  }, [userId])
+  }, [user, userId])
 
   // ── Check if a job is saved ────────────────────────────────────────────────
   const isJobSaved = useCallback((jobId) => savedJobIds.has(String(jobId)), [savedJobIds])
@@ -124,7 +194,7 @@ export function AppProvider({ children }) {
     <AppContext.Provider value={{
       jobs, setJobs,
       savedJobs, isJobSaved, toggleSaved,
-      profile, updateProfile,
+      profile, updateProfile, profileReady: profileOwnerId === userId,
       cvFiles, addCvFile, removeCvFile, setActiveCv,
       settings, updateSettings,
       notifications, setNotifications,

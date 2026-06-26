@@ -1,11 +1,13 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useApp } from '../context/AppContext'
 
-export default function ProtectedRoute({ children }) {
+export default function ProtectedRoute({ children, allowIncompleteProfile = false }) {
   const { isAuthenticated, loading } = useAuth()
+  const { profile, profileReady } = useApp()
   const location = useLocation()
 
-  if (loading) {
+  if (loading || (isAuthenticated && !profileReady)) {
     return (
       <div className="min-h-screen bg-bg flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
@@ -20,6 +22,10 @@ export default function ProtectedRoute({ children }) {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  if (!allowIncompleteProfile && profile?.onboardingCompleted === false) {
+    return <Navigate to="/onboarding" state={{ from: location }} replace />
   }
 
   return children

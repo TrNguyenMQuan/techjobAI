@@ -4,7 +4,6 @@ import { Eye, EyeOff, UserPlus, Loader2 } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import { Button, Input } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
-import { useApp } from '../context/AppContext'
 
 function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -48,7 +47,6 @@ export default function Register() {
   const [serverError, setServerError] = useState('')
 
   const { register } = useAuth()
-  const { updateProfile } = useApp()
   const navigate = useNavigate()
 
   const set = key => e => {
@@ -77,13 +75,12 @@ export default function Register() {
 
     setSubmitting(true)
     try {
-      const user = await register({
+      await register({
         name: form.name.trim(),
         email: form.email.trim(),
         password: form.password,
       })
-      updateProfile({ name: user.name, email: user.email })
-      navigate('/dashboard', { replace: true })
+      navigate('/onboarding', { replace: true })
     } catch (err) {
       setServerError(err.message || 'Đăng ký thất bại. Vui lòng thử lại.')
     } finally {

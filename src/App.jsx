@@ -10,6 +10,7 @@ import CoverLetter from './pages/CoverLetter'
 import Profile from './pages/Profile'
 import Login from './pages/Login'
 import Register from './pages/Register'
+import Onboarding from './pages/Onboarding'
 import { Settings, Help } from './pages/SettingsHelp'
 import NotFound from './pages/NotFound'
 
@@ -19,6 +20,7 @@ export default function App() {
       {/* Public auth routes */}
       <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
       <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
+      <Route path="/onboarding" element={<ProtectedRoute allowIncompleteProfile><Onboarding /></ProtectedRoute>} />
 
       {/* Protected app routes */}
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>

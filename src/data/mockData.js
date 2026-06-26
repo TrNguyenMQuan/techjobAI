@@ -301,6 +301,13 @@ export const MOCK_PROFILE = {
   gender: 'Male',
   dob: '15 Oct 1990',
   about: 'Passionate Frontend Developer with 5+ years of experience building scalable web applications. Specialized in React, TypeScript, and modern CSS frameworks. Driven by creating intuitive user experiences and writing clean, maintainable code. Actively exploring AI integration in modern UI development.',
+  socialLinks: {
+    facebook: 'https://facebook.com/nguyenvana.dev',
+    github: 'https://github.com/nguyenvana',
+    linkedin: 'https://linkedin.com/in/nguyenvana',
+    website: 'https://nguyenvana.dev',
+  },
+  onboardingCompleted: true,
   completeness: 85,
   completenessHint: "Add 'Career Preferences' to reach 100%",
   skills: [

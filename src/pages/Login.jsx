@@ -4,7 +4,6 @@ import { Eye, EyeOff, LogIn, Loader2 } from 'lucide-react'
 import AuthLayout from '../components/AuthLayout'
 import { Button, Input } from '../components/ui'
 import { useAuth } from '../context/AuthContext'
-import { useApp } from '../context/AppContext'
 
 function validateEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -18,7 +17,6 @@ export default function Login() {
   const [serverError, setServerError] = useState('')
 
   const { login } = useAuth()
-  const { updateProfile } = useApp()
   const navigate  = useNavigate()
   const location  = useLocation()
   const from      = location.state?.from?.pathname || '/dashboard'
@@ -44,8 +42,7 @@ export default function Login() {
 
     setSubmitting(true)
     try {
-      const user = await login({ email: form.email.trim(), password: form.password })
-      updateProfile({ name: user.name, email: user.email })
+      await login({ email: form.email.trim(), password: form.password })
       navigate(from, { replace: true })
     } catch (err) {
       setServerError(err.message || 'Đăng nhập thất bại. Vui lòng thử lại.')

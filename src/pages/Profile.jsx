@@ -1,5 +1,8 @@
-import { useState } from 'react'
-import { Pencil, Plus, X, Upload, Trash2, ExternalLink, Camera, Loader2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  Pencil, Plus, X, Upload, Trash2, ExternalLink, Camera, Loader2,
+  Facebook, Github, Linkedin, Globe, Link2,
+} from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -18,13 +21,116 @@ const PROFILE_TABS = [
   { id: 'saved',    label: 'Việc đã lưu' },
 ]
 
+const SOCIAL_PLATFORMS = [
+  {
+    key: 'facebook',
+    label: 'Facebook',
+    placeholder: 'https://facebook.com/your.name',
+    Icon: Facebook,
+    color: 'text-blue-600',
+    bg: 'bg-blue-50',
+    border: 'border-blue-100',
+  },
+  {
+    key: 'github',
+    label: 'GitHub',
+    placeholder: 'https://github.com/username',
+    Icon: Github,
+    color: 'text-gray-800',
+    bg: 'bg-gray-100',
+    border: 'border-gray-200',
+  },
+  {
+    key: 'linkedin',
+    label: 'LinkedIn',
+    placeholder: 'https://linkedin.com/in/username',
+    Icon: Linkedin,
+    color: 'text-sky-700',
+    bg: 'bg-sky-50',
+    border: 'border-sky-100',
+  },
+  {
+    key: 'website',
+    label: 'Portfolio',
+    placeholder: 'https://your-portfolio.dev',
+    Icon: Globe,
+    color: 'text-mint-dark',
+    bg: 'bg-mint-bg',
+    border: 'border-mint/20',
+  },
+]
+
+const DEFAULT_SOCIAL_LINKS = SOCIAL_PLATFORMS.reduce((acc, item) => {
+  acc[item.key] = ''
+  return acc
+}, {})
+
+function getSocialLinks(profile) {
+  return { ...DEFAULT_SOCIAL_LINKS, ...(profile.socialLinks || {}) }
+}
+
+function normalizeUrl(value) {
+  const trimmed = value?.trim() || ''
+  if (!trimmed) return ''
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`
+}
+
+function getVisibleSocialLinks(profile) {
+  const links = getSocialLinks(profile)
+  return SOCIAL_PLATFORMS
+    .map(item => ({ ...item, url: normalizeUrl(links[item.key]) }))
+    .filter(item => item.url)
+}
+
+function SocialLinkButton({ item, compact = false }) {
+  const { Icon } = item
+  return (
+    <a
+      href={item.url}
+      target="_blank"
+      rel="noreferrer"
+      title={item.label}
+      className={clsx(
+        'inline-flex items-center rounded-lg border transition-all hover:-translate-y-0.5 hover:shadow-card',
+        item.bg,
+        item.border,
+        item.color,
+        compact ? 'gap-1.5 px-2.5 py-1.5 text-xs' : 'gap-2 px-3 py-2 text-sm font-medium'
+      )}
+    >
+      <Icon size={compact ? 13 : 15} />
+      {!compact && <span>{item.label}</span>}
+      {!compact && <ExternalLink size={12} className="opacity-60" />}
+    </a>
+  )
+}
+
 // ── Tab: Personal Info ────────────────────────────────────────────────────────
 function TabPersonal({ profile, onUpdate }) {
   const [editing, setEditing] = useState(false)
-  const [form, setForm]       = useState(profile)
+  const [form, setForm]       = useState({ ...profile, socialLinks: getSocialLinks(profile) })
 
-  const handleSave = () => { onUpdate(form); setEditing(false) }
+  useEffect(() => {
+    setForm({ ...profile, socialLinks: getSocialLinks(profile) })
+  }, [profile])
+
+  const handleSave = () => {
+    const cleanedLinks = Object.entries(getSocialLinks(form)).reduce((acc, [key, value]) => {
+      acc[key] = normalizeUrl(value)
+      return acc
+    }, {})
+    onUpdate({ ...form, socialLinks: cleanedLinks })
+    setEditing(false)
+  }
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const setSocial = key => e => {
+    setForm(f => ({
+      ...f,
+      socialLinks: { ...getSocialLinks(f), [key]: e.target.value },
+    }))
+  }
+
+  const visibleSocialLinks = getVisibleSocialLinks(profile)
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
@@ -46,6 +152,52 @@ function TabPersonal({ profile, onUpdate }) {
             />
           ) : (
             <p className="text-sm text-text-secondary leading-relaxed">{profile.about}</p>
+          )}
+
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Link2 size={14} className="text-violet" />
+                <h4 className="text-xs font-semibold text-text-primary">Social & Portfolio Links</h4>
+              </div>
+              {!editing && visibleSocialLinks.length > 0 && (
+                <span className="text-2xs text-text-muted">{visibleSocialLinks.length} linked</span>
+              )}
+            </div>
+
+            {editing ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {SOCIAL_PLATFORMS.map(({ key, label, placeholder, Icon }) => (
+                  <label key={key} className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 focus-within:border-violet focus-within:ring-2 focus-within:ring-violet/20 transition-all">
+                    <Icon size={15} className="text-text-muted shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-2xs font-semibold text-text-muted uppercase tracking-wider">{label}</p>
+                      <input
+                        value={getSocialLinks(form)[key]}
+                        onChange={setSocial(key)}
+                        placeholder={placeholder}
+                        className="w-full bg-transparent text-sm text-text-primary placeholder:text-text-muted focus:outline-none"
+                      />
+                    </div>
+                  </label>
+                ))}
+              </div>
+            ) : visibleSocialLinks.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {visibleSocialLinks.map(item => <SocialLinkButton key={item.key} item={item} />)}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-3">
+                <p className="text-sm text-text-secondary">Thêm Facebook, GitHub, LinkedIn hoặc portfolio để nhà tuyển dụng xem được dấu ấn cá nhân của bạn nhanh hơn.</p>
+              </div>
+            )}
+          </div>
+
+          {editing && (
+            <div className="flex gap-2 mt-4">
+              <Button variant="primary" size="sm" onClick={handleSave}>Lưu thay đổi</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setForm({ ...profile, socialLinks: getSocialLinks(profile) }); setEditing(false) }}>Huỷ</Button>
+            </div>
           )}
         </Card>
 
@@ -73,7 +225,7 @@ function TabPersonal({ profile, onUpdate }) {
           {editing && (
             <div className="flex gap-2 mt-4">
               <Button variant="primary" size="sm" onClick={handleSave}>Lưu thay đổi</Button>
-              <Button variant="ghost" size="sm" onClick={() => { setForm(profile); setEditing(false) }}>Huỷ</Button>
+              <Button variant="ghost" size="sm" onClick={() => { setForm({ ...profile, socialLinks: getSocialLinks(profile) }); setEditing(false) }}>Huỷ</Button>
             </div>
           )}
         </Card>
@@ -347,6 +499,7 @@ export default function Profile() {
   const { profile, updateProfile, savedJobs } = useApp()
   const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState('info')
+  const visibleSocialLinks = getVisibleSocialLinks(profile)
 
   return (
     <div className="animate-fade-in space-y-5">
@@ -368,6 +521,13 @@ export default function Profile() {
               <span>📞 {profile.phone}</span>
               <span>📍 {profile.location}</span>
             </div>
+            {visibleSocialLinks.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                {visibleSocialLinks.map(item => (
+                  <SocialLinkButton key={item.key} item={item} compact />
+                ))}
+              </div>
+            )}
           </div>
 
           <Button
