@@ -7,24 +7,18 @@ Usage:
     python source/setup_culture_table.py
 """
 
-import os
 import json
 from pathlib import Path
 from dotenv import load_dotenv
 import psycopg
+from ai.db_config import psycopg3_kwargs
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
 
 def get_conn():
-    return psycopg.connect(
-        host=os.getenv("POSTGRES_HOST", "localhost"),
-        port=int(os.getenv("POSTGRES_PORT", 5432)),
-        dbname=os.getenv("POSTGRES_DB", "techjob_ai"),
-        user=os.getenv("POSTGRES_USER", "techjob"),
-        password=os.getenv("POSTGRES_PASSWORD", "techjob123"),
-    )
+    return psycopg.connect(**psycopg3_kwargs())
 
 
 # ── Seed data: sample culture reviews for major VN IT companies ──────────────

@@ -10,7 +10,6 @@ Usage:
     python ai/embedding.py
 """
 
-import os
 import json
 import time
 from datetime import datetime
@@ -20,6 +19,7 @@ import numpy as np
 from sentence_transformers import SentenceTransformer
 from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
+from ai.db_config import sqlalchemy_url
 
 # ============================================================
 # CONFIG
@@ -27,13 +27,7 @@ from dotenv import load_dotenv
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-DB_USER = os.getenv("POSTGRES_USER", "techjob")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "techjob123")
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
-
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = sqlalchemy_url()
 
 MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 BATCH_SIZE = 32  # Can use larger batches for lighter model

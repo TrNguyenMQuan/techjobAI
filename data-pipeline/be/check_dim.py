@@ -1,14 +1,8 @@
 import psycopg2
+from ai.db_config import psycopg2_kwargs
 
 try:
-    conn = psycopg2.connect(
-        host="ep-odd-feather-aok9wn0q.c-2.ap-southeast-1.aws.neon.tech",
-        port=5432,
-        dbname="neondb",
-        user="machine_learning_readonly",
-        password="machine_learning",
-        sslmode="require"
-    )
+    conn = psycopg2.connect(**psycopg2_kwargs())
     cur = conn.cursor()
 
     print("Columns of mart_skill_demand:")

@@ -16,6 +16,7 @@ import re
 import json
 import sys
 from pathlib import Path
+from ai.db_config import psycopg2_kwargs
 
 try:
     from dotenv import load_dotenv
@@ -31,12 +32,6 @@ except ImportError:
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
-
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_USER = os.getenv("POSTGRES_USER", "techjob")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "techjob123")
-DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
 
 # ── Dangerous SQL patterns — block any data-modifying statements ─────────────
 BLOCKED_PATTERNS = re.compile(
@@ -82,13 +77,7 @@ def _get_readonly_conn():
             "Install data-pipeline/requirements.txt first."
         )
 
-    conn = psycopg2.connect(
-        host=DB_HOST,
-        port=int(DB_PORT),
-        user=DB_USER,
-        password=DB_PASS,
-        dbname=DB_NAME,
-    )
+    conn = psycopg2.connect(**psycopg2_kwargs())
     conn.set_session(readonly=True, autocommit=True)
     return conn
 

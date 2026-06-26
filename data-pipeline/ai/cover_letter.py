@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 import re
 import unicodedata
+from ai.db_config import psycopg2_kwargs
 from ai.llm_provider import create_chat_model, get_provider_chain
 
 try:
@@ -415,17 +416,7 @@ def generate_cover_letter_from_job_id(
         return {"error": f"File PDF không hợp lệ hoặc bị hỏng: {str(e)}"}
 
     # Fetch job details
-    DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-    DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-    DB_USER = os.getenv("POSTGRES_USER", "techjob")
-    DB_PASS = os.getenv("POSTGRES_PASSWORD", "techjob123")
-    DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
-
-    conn = psycopg2.connect(
-        host=DB_HOST, port=int(DB_PORT),
-        user=DB_USER, password=DB_PASS,
-        dbname=DB_NAME,
-    )
+    conn = psycopg2.connect(**psycopg2_kwargs())
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """

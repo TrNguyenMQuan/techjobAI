@@ -15,18 +15,12 @@ import os
 import threading
 from pathlib import Path
 from dotenv import load_dotenv
+from ai.db_config import psycopg2_kwargs, public_config
 from ai.observability import log_ai_event, timed_ai_event
 
 # Load env from data-pipeline/.env
 ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
 load_dotenv(ENV_PATH)
-
-DB_HOST = os.getenv("NEON_HOST", os.getenv("POSTGRES_HOST", "localhost"))
-DB_PORT = os.getenv("NEON_PORT", os.getenv("POSTGRES_PORT", "5432"))
-DB_USER = os.getenv("NEON_USER", os.getenv("POSTGRES_USER", "techjob"))
-DB_PASS = os.getenv("NEON_PASSWORD", os.getenv("POSTGRES_PASSWORD", "techjob123"))
-DB_NAME = os.getenv("NEON_DB", os.getenv("POSTGRES_DB", "techjob_ai"))
-DB_SSLMODE = "require" if os.getenv("NEON_HOST") else os.getenv("PGSSLMODE", "prefer")
 
 # Model for semantic search (cached globally)
 _search_model = None
@@ -43,14 +37,13 @@ def get_model():
 
 def get_conn():
     return psycopg2.connect(
-        host=DB_HOST, port=int(DB_PORT),
-        user=DB_USER, password=DB_PASS,
-        dbname=DB_NAME, sslmode=DB_SSLMODE,
-        connect_timeout=8,
-        keepalives=1,
-        keepalives_idle=30,
-        keepalives_interval=10,
-        keepalives_count=3,
+        **psycopg2_kwargs(
+            connect_timeout=8,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+        ),
     )
 
 # ============================================================
@@ -71,17 +64,13 @@ def startup():
     db_pool = pool.ThreadedConnectionPool(
         1,
         10,
-        host=DB_HOST,
-        port=int(DB_PORT),
-        user=DB_USER,
-        password=DB_PASS,
-        dbname=DB_NAME,
-        sslmode=DB_SSLMODE,
-        connect_timeout=8,
-        keepalives=1,
-        keepalives_idle=30,
-        keepalives_interval=10,
-        keepalives_count=3,
+        **psycopg2_kwargs(
+            connect_timeout=8,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=3,
+        ),
     )
 
 @app.on_event("shutdown")
@@ -164,6 +153,26 @@ def ai_health(conn = Depends(get_db)):
         "embedding_model": "all-MiniLM-L6-v2",
         "skills_count": len(load_skills()),
         "mcp_tools": [tool["name"] for tool in get_tool_definitions()],
+    }
+
+
+@app.get("/api/health/db")
+def db_health(conn = Depends(get_db)):
+    """Confirm the backend, not the browser/user, owns the DB connection."""
+    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur.execute(
+        """
+        SELECT current_database() AS database,
+               current_user AS current_user,
+               version() AS server_version
+        """
+    )
+    row = cur.fetchone()
+    cur.close()
+    return {
+        "status": "ok",
+        "connection": public_config(),
+        "database": row,
     }
 
 
@@ -682,21 +691,6 @@ async def generate_cover_letter_endpoint(
     if not job_id:
         return {"error": "Missing job_id or job_description"}
         
-    # If falling back to DB lookup, we can just fetch the job and call generate_cover_letter
-    # instead of generate_cover_letter_from_job_id which parses the pdf again
-    import psycopg2
-    import psycopg2.extras
-    import os
-    
-    DB_HOST = os.getenv("POSTGRES_HOST", "techjob-postgres-project")
-    DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-    DB_USER = os.getenv("POSTGRES_USER", "postgres")
-    DB_PASS = os.getenv("POSTGRES_PASSWORD", "postgres")
-    DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
-
-    conn = psycopg2.connect(
-        host=DB_HOST, port=int(DB_PORT), user=DB_USER, password=DB_PASS, dbname=DB_NAME
-    )
     cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """SELECT f.job_title AS title,
@@ -884,4 +878,3 @@ def build_embeddings(batch_size: int = Query(8, ge=1, le=64), conn = Depends(get
 
     cur.close()
     return {"status": "ok", "processed": total, "total_jobs": len(jobs)}
-

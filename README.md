@@ -147,3 +147,18 @@ Copy `.env.example` to `.env` when you're ready to point at a real backend:
 VITE_API_URL=http://localhost:8000/api
 VITE_WS_URL=ws://localhost:8000/ws/chat
 ```
+
+## AI / ML runtime model
+
+End users never connect to NeonDB directly. The browser only calls the FastAPI
+backend through `VITE_API_URL`; the backend owns all warehouse, ML, and LLM
+credentials through `data-pipeline/.env`.
+
+```
+User browser -> React frontend -> FastAPI backend -> NeonDB / ML model / LLM
+```
+
+For local AI features, run the backend with `data-pipeline/.env` containing
+`NEON_HOST`, `NEON_DB`, `NEON_USER`, `NEON_PASSWORD`, and `NEON_SSLMODE=require`.
+Only data/ML teammates should receive read-only warehouse credentials for
+direct SQL analysis or model training.

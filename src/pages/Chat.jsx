@@ -1,11 +1,20 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Send, MoreVertical, CheckCircle, Bot, BarChart3, Download, AlertTriangle, FileText } from 'lucide-react'
+import {
+  Send, CheckCircle, Bot, BarChart3, Download, AlertTriangle, FileText,
+  MessageSquarePlus, Trash2, Clock3, PanelLeftOpen, PanelLeftClose,
+} from 'lucide-react'
 import clsx from 'clsx'
 import { MiniJobCard } from '../components/JobCard'
 import { AIBadge, TypingIndicator, Button } from '../components/ui'
 import { INITIAL_MESSAGES, QUICK_ACTIONS, SKILL_DATA } from '../data/mockData'
-import { resetChatSession, sendChatMessage } from '../services/chatService'
+import {
+  createChatSessionId,
+  resetChatSession,
+  sendChatMessage,
+  setChatSessionId,
+} from '../services/chatService'
+import { useAuth } from '../context/AuthContext'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Cell, ResponsiveContainer } from 'recharts'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -74,6 +83,218 @@ function attachCoverLetterCta(response) {
       hint: 'Upload CV ở trang Write Cover Letter, chọn job đang apply, rồi bấm “Tạo lại với AI”.',
     },
   }
+}
+
+const MAX_STORED_CONVERSATIONS = 20
+
+function chatStorageKey(userId) {
+  return `techjob_chat_conversations_${userId || 'guest'}`
+}
+
+function cloneInitialMessages() {
+  return INITIAL_MESSAGES.map(message => ({
+    ...message,
+    timestamp: new Date(message.timestamp).toISOString(),
+  }))
+}
+
+function normalizeMessage(message) {
+  return {
+    ...message,
+    timestamp: message.timestamp
+      ? new Date(message.timestamp).toISOString()
+      : new Date().toISOString(),
+  }
+}
+
+function createConversation() {
+  const now = new Date().toISOString()
+  return {
+    id: globalThis.crypto?.randomUUID?.() || `chat-${Date.now()}`,
+    sessionId: createChatSessionId(),
+    title: 'Cuộc trò chuyện mới',
+    createdAt: now,
+    updatedAt: now,
+    messages: cloneInitialMessages(),
+  }
+}
+
+function loadConversations(userId) {
+  try {
+    const raw = localStorage.getItem(chatStorageKey(userId))
+    const parsed = raw ? JSON.parse(raw) : null
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.map(conversation => ({
+        ...conversation,
+        sessionId: conversation.sessionId || createChatSessionId(),
+        messages: (conversation.messages || cloneInitialMessages()).map(normalizeMessage),
+      }))
+    }
+  } catch {
+    // Ignore malformed localStorage and start fresh.
+  }
+  return [createConversation()]
+}
+
+function saveConversations(userId, conversations) {
+  const trimmed = conversations
+    .slice()
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .slice(0, MAX_STORED_CONVERSATIONS)
+  localStorage.setItem(chatStorageKey(userId), JSON.stringify(trimmed))
+  return trimmed
+}
+
+function buildConversationTitle(text) {
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (!clean) return 'Cuộc trò chuyện mới'
+  return clean.length > 42 ? `${clean.slice(0, 42)}...` : clean
+}
+
+function formatConversationTime(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }) +
+    ' ' +
+    date.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })
+}
+
+function ChatHistoryPanel({
+  conversations,
+  activeConversationId,
+  onSelect,
+  onNew,
+  onDelete,
+  collapsed,
+  onToggle,
+}) {
+  return (
+    <aside className={clsx(
+      'hidden md:flex flex-col border-r border-gray-100 bg-white transition-all shrink-0',
+      collapsed ? 'w-14' : 'w-72'
+    )}>
+      <div className="h-16 px-3 border-b border-gray-100 flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onToggle}
+          title={collapsed ? 'Mở lịch sử chat' : 'Thu gọn lịch sử chat'}
+          className="p-2 rounded-lg text-text-muted hover:bg-gray-100 hover:text-text-primary transition-colors"
+        >
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+        </button>
+        {!collapsed && (
+          <>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold text-text-primary">Lịch sử chat</p>
+              <p className="text-2xs text-text-muted">{conversations.length} cuộc trò chuyện</p>
+            </div>
+            <button
+              type="button"
+              onClick={onNew}
+              title="Tạo cuộc trò chuyện mới"
+              className="p-2 rounded-lg text-violet hover:bg-violet-bg transition-colors"
+            >
+              <MessageSquarePlus size={16} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {!collapsed && (
+        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+          {conversations.map(conversation => (
+            <button
+              key={conversation.id}
+              type="button"
+              onClick={() => onSelect(conversation.id)}
+              className={clsx(
+                'group w-full text-left rounded-lg border px-3 py-2.5 transition-all',
+                activeConversationId === conversation.id
+                  ? 'border-violet/30 bg-violet-bg'
+                  : 'border-gray-100 bg-white hover:border-gray-200 hover:bg-gray-50'
+              )}
+            >
+              <div className="flex items-start gap-2">
+                <div className={clsx(
+                  'w-7 h-7 rounded-lg flex items-center justify-center shrink-0',
+                  activeConversationId === conversation.id ? 'bg-violet text-white' : 'bg-gray-100 text-text-muted'
+                )}>
+                  <Bot size={13} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-text-primary truncate">{conversation.title}</p>
+                  <p className="text-2xs text-text-muted mt-0.5 flex items-center gap-1">
+                    <Clock3 size={10} /> {formatConversationTime(conversation.updatedAt)}
+                  </p>
+                </div>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  onClick={event => {
+                    event.stopPropagation()
+                    onDelete(conversation.id)
+                  }}
+                  onKeyDown={event => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      event.stopPropagation()
+                      onDelete(conversation.id)
+                    }
+                  }}
+                  title="Xoá cuộc trò chuyện"
+                  className="opacity-0 group-hover:opacity-100 p-1.5 rounded text-text-muted hover:text-red-500 hover:bg-red-50 transition-all"
+                >
+                  <Trash2 size={12} />
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {collapsed && (
+        <div className="p-2">
+          <button
+            type="button"
+            onClick={onNew}
+            title="Tạo cuộc trò chuyện mới"
+            className="w-10 h-10 rounded-lg text-violet hover:bg-violet-bg flex items-center justify-center transition-colors"
+          >
+            <MessageSquarePlus size={16} />
+          </button>
+        </div>
+      )}
+    </aside>
+  )
+}
+
+function MobileHistoryBar({ conversations, activeConversationId, onSelect, onNew, disabled }) {
+  return (
+    <div className="md:hidden px-4 py-2 bg-white border-b border-gray-100 flex items-center gap-2 shrink-0">
+      <select
+        value={activeConversationId || ''}
+        onChange={event => onSelect(event.target.value)}
+        disabled={disabled}
+        aria-label="Chọn lịch sử trò chuyện"
+        className="min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-text-primary focus:outline-none focus:border-violet"
+      >
+        {conversations.map(conversation => (
+          <option key={conversation.id} value={conversation.id}>
+            {conversation.title} - {formatConversationTime(conversation.updatedAt)}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={onNew}
+        disabled={disabled}
+        title="Tạo cuộc trò chuyện mới"
+        className="p-2 rounded-lg text-violet hover:bg-violet-bg disabled:opacity-50 transition-colors"
+      >
+        <MessageSquarePlus size={16} />
+      </button>
+    </div>
+  )
 }
 
 function MessageBubble({ msg, onAction }) {
@@ -202,13 +423,55 @@ function MessageBubble({ msg, onAction }) {
 // ─── Main Chat page ───────────────────────────────────────────────────────────
 export default function Chat() {
   const navigate = useNavigate()
-  const [messages, setMessages] = useState(INITIAL_MESSAGES)
+  const { user } = useAuth()
+  const userId = user?.id || 'guest'
+  const [conversations, setConversations] = useState(() => loadConversations(userId))
+  const [activeConversationId, setActiveConversationId] = useState(() => conversations[0]?.id)
+  const activeConversation = conversations.find(item => item.id === activeConversationId) || conversations[0]
+  const messages = activeConversation?.messages || cloneInitialMessages()
   const [input, setInput]       = useState('')
   const [typing, setTyping]     = useState(false)
   const [streamText, setStreamText] = useState('')
   const [fallback, setFallback] = useState(false)
+  const [historyCollapsed, setHistoryCollapsed] = useState(false)
   const endRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    const loaded = loadConversations(userId)
+    setConversations(loaded)
+    setActiveConversationId(loaded[0]?.id)
+    setInput('')
+    setTyping(false)
+    setStreamText('')
+    setFallback(false)
+  }, [userId])
+
+  useEffect(() => {
+    if (activeConversation?.sessionId) {
+      setChatSessionId(activeConversation.sessionId)
+    }
+  }, [activeConversation?.sessionId])
+
+  const persistConversations = useCallback((updater) => {
+    setConversations(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      return saveConversations(userId, next)
+    })
+  }, [userId])
+
+  const updateActiveConversation = useCallback((patcher) => {
+    const now = new Date().toISOString()
+    persistConversations(prev => prev.map(conversation => {
+      if (conversation.id !== activeConversationId) return conversation
+      const patch = typeof patcher === 'function' ? patcher(conversation) : patcher
+      return {
+        ...conversation,
+        ...patch,
+        updatedAt: patch.updatedAt || now,
+      }
+    }))
+  }, [activeConversationId, persistConversations])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -216,7 +479,7 @@ export default function Chat() {
 
   const sendMessage = useCallback(async (text) => {
     const content = text || input.trim()
-    if (!content || typing) return
+    if (!content || typing || !activeConversation) return
 
     setInput('')
     const userMsg = {
@@ -224,9 +487,15 @@ export default function Chat() {
       role: 'user',
       type: 'text',
       content,
-      timestamp: new Date(),
+      timestamp: new Date().toISOString(),
     }
-    setMessages(prev => [...prev, userMsg])
+    const nextMessages = [...messages, userMsg]
+    updateActiveConversation(conversation => ({
+      title: conversation.title === 'Cuộc trò chuyện mới'
+        ? buildConversationTitle(content)
+        : conversation.title,
+      messages: nextMessages,
+    }))
     setTyping(true)
     setStreamText('')
     setFallback(false)
@@ -239,7 +508,7 @@ export default function Chat() {
       if (content.trim().toLowerCase() === '/simulate-error') {
         throw new Error('AI backend unreachable (simulated)')
       }
-      aiResp = await sendChatMessage(content, messages)
+      aiResp = await sendChatMessage(content, nextMessages)
       if (aiResp?.error) {
         throw new Error('AI backend returned an error response')
       }
@@ -266,14 +535,15 @@ export default function Chat() {
     }
     setStreamText('')
 
-    setMessages(prev => [...prev, {
+    const assistantMsg = {
       id: Date.now(),
       role: 'assistant',
       ...aiResp,
-      timestamp: new Date(),
-    }])
+      timestamp: new Date().toISOString(),
+    }
+    updateActiveConversation({ messages: [...nextMessages, assistantMsg] })
     inputRef.current?.focus()
-  }, [input, typing, messages])
+  }, [activeConversation, input, messages, typing, updateActiveConversation])
 
   const handleKey = e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() }
@@ -284,8 +554,13 @@ export default function Chat() {
   }
 
   const handleNewConversation = () => {
-    resetChatSession()
-    setMessages(INITIAL_MESSAGES)
+    const sessionId = resetChatSession()
+    const conversation = {
+      ...createConversation(),
+      sessionId,
+    }
+    persistConversations(prev => [conversation, ...prev])
+    setActiveConversationId(conversation.id)
     setInput('')
     setTyping(false)
     setStreamText('')
@@ -293,10 +568,46 @@ export default function Chat() {
     inputRef.current?.focus()
   }
 
+  const handleSelectConversation = id => {
+    if (typing) return
+    const conversation = conversations.find(item => item.id === id)
+    if (!conversation) return
+    setActiveConversationId(id)
+    setChatSessionId(conversation.sessionId)
+    setInput('')
+    setStreamText('')
+    setFallback(false)
+    inputRef.current?.focus()
+  }
+
+  const handleDeleteConversation = id => {
+    if (typing) return
+    const remaining = conversations.filter(item => item.id !== id)
+    const fallbackConversation = remaining.length > 0 ? null : createConversation()
+    const nextConversations = remaining.length > 0 ? remaining : [fallbackConversation]
+    persistConversations(nextConversations)
+    if (id === activeConversationId) {
+      const nextConversation = remaining[0] || fallbackConversation
+      setActiveConversationId(nextConversation.id)
+      setChatSessionId(nextConversation.sessionId)
+    }
+  }
+
   return (
-    <div className="flex flex-col h-[calc(100vh-64px)] animate-fade-in -m-6">
-      {/* Header */}
-      <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 bg-white shrink-0">
+    <div className="flex h-[calc(100vh-64px)] animate-fade-in -m-6 bg-bg">
+      <ChatHistoryPanel
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        onSelect={handleSelectConversation}
+        onNew={handleNewConversation}
+        onDelete={handleDeleteConversation}
+        collapsed={historyCollapsed}
+        onToggle={() => setHistoryCollapsed(prev => !prev)}
+      />
+
+      <div className="flex flex-col min-w-0 flex-1">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-3.5 border-b border-gray-100 bg-white shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-full bg-indigo flex items-center justify-center">
             <Bot size={16} className="text-white" />
@@ -316,9 +627,17 @@ export default function Chat() {
           aria-label="Bắt đầu cuộc trò chuyện mới"
           className="p-2 rounded-lg text-text-muted hover:bg-gray-100 transition-colors"
         >
-          <MoreVertical size={16} />
+          <MessageSquarePlus size={16} />
         </button>
       </div>
+
+      <MobileHistoryBar
+        conversations={conversations}
+        activeConversationId={activeConversationId}
+        onSelect={handleSelectConversation}
+        onNew={handleNewConversation}
+        disabled={typing}
+      />
 
       {/* AI Fallback banner — NFR-3 Graceful Degradation: Tầng 3/4 lỗi, Tầng 1/2 vẫn hoạt động */}
       {fallback && (
@@ -413,6 +732,7 @@ export default function Chat() {
         <p className="text-center text-2xs text-text-muted mt-2">
           TechJob AI có thể mắc sai sót. Hãy kiểm tra thông tin quan trọng.
         </p>
+      </div>
       </div>
     </div>
   )

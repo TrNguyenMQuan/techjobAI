@@ -12,7 +12,7 @@ const CHAT_TIMEOUT_MS = Number(import.meta.env.VITE_CHAT_TIMEOUT_MS || 90000)
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws/chat'
 const CHAT_SESSION_KEY = 'techjob_chat_session_id'
 
-function createSessionId() {
+export function createChatSessionId() {
   const id = globalThis.crypto?.randomUUID?.()
     || `${Date.now()}-${Math.random().toString(36).slice(2)}`
   return `web-${id}`.slice(0, 100)
@@ -21,14 +21,20 @@ function createSessionId() {
 export function getChatSessionId() {
   let sessionId = sessionStorage.getItem(CHAT_SESSION_KEY)
   if (!sessionId) {
-    sessionId = createSessionId()
+    sessionId = createChatSessionId()
     sessionStorage.setItem(CHAT_SESSION_KEY, sessionId)
   }
   return sessionId
 }
 
+export function setChatSessionId(sessionId) {
+  if (!sessionId) return getChatSessionId()
+  sessionStorage.setItem(CHAT_SESSION_KEY, sessionId)
+  return sessionId
+}
+
 export function resetChatSession() {
-  const sessionId = createSessionId()
+  const sessionId = createChatSessionId()
   sessionStorage.setItem(CHAT_SESSION_KEY, sessionId)
   return sessionId
 }
