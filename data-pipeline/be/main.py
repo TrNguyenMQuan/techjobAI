@@ -699,18 +699,12 @@ async def generate_cover_letter_endpoint(
     # instead of generate_cover_letter_from_job_id which parses the pdf again
     import psycopg2
     import psycopg2.extras
-    import os
     
-    DB_HOST = os.getenv("POSTGRES_HOST", "techjob-postgres-project")
-    DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-    DB_USER = os.getenv("POSTGRES_USER", "postgres")
-    DB_PASS = os.getenv("POSTGRES_PASSWORD", "postgres")
-    DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
-
-    conn = psycopg2.connect(
-        host=DB_HOST, port=int(DB_PORT), user=DB_USER, password=DB_PASS, dbname=DB_NAME
+    # Kết nối lên thẳng Cloud (NeonDB) bằng các biến toàn cục đã khai báo ở đầu file
+    conn_db = psycopg2.connect(
+        host=DB_HOST, port=int(DB_PORT), user=DB_USER, password=DB_PASS, dbname=DB_NAME, sslmode=DB_SSLMODE
     )
-    cur = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    cur = conn_db.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
     cur.execute(
         """SELECT f.job_title AS title,
                   COALESCE(c.company_name, %s) AS company_name,
@@ -723,6 +717,7 @@ async def generate_cover_letter_endpoint(
     )
     job = cur.fetchone()
     cur.close()
+    conn_db.close()
     if not job:
         return {"error": f"Job ID {job_id} not found in database."}
 
