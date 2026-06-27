@@ -1,13 +1,21 @@
 import psycopg2
 
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load env
+ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(ENV_PATH)
+
 try:
     conn = psycopg2.connect(
-        host="ep-odd-feather-aok9wn0q.c-2.ap-southeast-1.aws.neon.tech",
-        port=5432,
-        dbname="neondb",
-        user="machine_learning_readonly",
-        password="machine_learning",
-        sslmode="require"
+        host=os.getenv("NEON_HOST", os.getenv("POSTGRES_HOST", "localhost")),
+        port=int(os.getenv("NEON_PORT", os.getenv("POSTGRES_PORT", "5432"))),
+        user=os.getenv("NEON_USER", os.getenv("POSTGRES_USER", "techjob")),
+        password=os.getenv("NEON_PASSWORD", os.getenv("POSTGRES_PASSWORD", "techjob123")),
+        dbname=os.getenv("NEON_DB", os.getenv("POSTGRES_DB", "techjob_ai")),
+        sslmode="require" if os.getenv("NEON_HOST") else os.getenv("PGSSLMODE", "prefer")
     )
     cur = conn.cursor()
 

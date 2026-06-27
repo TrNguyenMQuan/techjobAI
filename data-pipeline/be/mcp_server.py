@@ -32,11 +32,12 @@ except ImportError:
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(PROJECT_ROOT / ".env")
 
-DB_HOST = os.getenv("POSTGRES_HOST", "localhost")
-DB_PORT = os.getenv("POSTGRES_PORT", "5432")
-DB_USER = os.getenv("POSTGRES_USER", "techjob")
-DB_PASS = os.getenv("POSTGRES_PASSWORD", "techjob123")
-DB_NAME = os.getenv("POSTGRES_DB", "techjob_ai")
+DB_HOST = os.getenv("NEON_HOST", os.getenv("POSTGRES_HOST", "localhost"))
+DB_PORT = os.getenv("NEON_PORT", os.getenv("POSTGRES_PORT", "5432"))
+DB_USER = os.getenv("NEON_USER", os.getenv("POSTGRES_USER", "techjob"))
+DB_PASS = os.getenv("NEON_PASSWORD", os.getenv("POSTGRES_PASSWORD", "techjob123"))
+DB_NAME = os.getenv("NEON_DB", os.getenv("POSTGRES_DB", "techjob_ai"))
+DB_SSLMODE = "require" if os.getenv("NEON_HOST") else os.getenv("PGSSLMODE", "prefer")
 
 # ── Dangerous SQL patterns — block any data-modifying statements ─────────────
 BLOCKED_PATTERNS = re.compile(
@@ -88,6 +89,7 @@ def _get_readonly_conn():
         user=DB_USER,
         password=DB_PASS,
         dbname=DB_NAME,
+        sslmode=DB_SSLMODE,
     )
     conn.set_session(readonly=True, autocommit=True)
     return conn
