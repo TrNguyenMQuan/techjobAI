@@ -132,8 +132,18 @@ export default function JobList() {
   const [searchParams] = useSearchParams()
   const queryParam = searchParams.get('q') || ''
 
-  const [loading, setLoading]   = useState(true)
-  const [searchResults, setSearchResults] = useState(null)
+  const [loading, setLoading]   = useState(() => {
+    const savedResults = sessionStorage.getItem('jobSearchResults')
+    const savedQuery = sessionStorage.getItem('jobSearchQuery')
+    if (savedResults && savedQuery === queryParam) return false
+    return true
+  })
+  const [searchResults, setSearchResults] = useState(() => {
+    const savedResults = sessionStorage.getItem('jobSearchResults')
+    const savedQuery = sessionStorage.getItem('jobSearchQuery')
+    if (savedResults && savedQuery === queryParam) return JSON.parse(savedResults)
+    return null
+  })
   const [searchError, setSearchError] = useState('')
   const [filters, setFilters]   = useState({ locations: [], levels: [], types: [], salaryKey: 'Tất cả' })
   const [showFilter, setShowFilter] = useState(false)
@@ -142,6 +152,14 @@ export default function JobList() {
   const PAGE_SIZE = 10
 
   useEffect(() => {
+    // Check cache first to avoid refetching on tab switch
+    const savedQuery = sessionStorage.getItem('jobSearchQuery')
+    const savedMode = sessionStorage.getItem('jobSearchMode')
+    if (searchResults && savedQuery === queryParam && savedMode === searchMode) {
+      setLoading(false)
+      return
+    }
+
     setLoading(true)
     setSearchError('')
     let cancelled = false
@@ -150,7 +168,11 @@ export default function JobList() {
       getJobs({ keyword: queryParam.trim(), size: 1000, ai_estimate: false })
         .then(result => {
           if (!cancelled) {
-            setSearchResults(result.data || [])
+            const data = result.data || []
+            setSearchResults(data)
+            sessionStorage.setItem('jobSearchResults', JSON.stringify(data))
+            sessionStorage.setItem('jobSearchQuery', queryParam)
+            sessionStorage.setItem('jobSearchMode', searchMode)
           }
         })
         .catch(error => {
@@ -169,6 +191,9 @@ export default function JobList() {
         if (!cancelled) {
           const results = result.data || []
           setSearchResults(results)
+          sessionStorage.setItem('jobSearchResults', JSON.stringify(results))
+          sessionStorage.setItem('jobSearchQuery', queryParam)
+          sessionStorage.setItem('jobSearchMode', searchMode)
           // Keep fetched jobs available to Job Detail and Cover Letter after
           // the user clicks a semantic-search result.
           setJobs(current => {

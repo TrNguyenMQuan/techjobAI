@@ -202,13 +202,20 @@ function MessageBubble({ msg, onAction }) {
 // ─── Main Chat page ───────────────────────────────────────────────────────────
 export default function Chat() {
   const navigate = useNavigate()
-  const [messages, setMessages] = useState(INITIAL_MESSAGES)
+  const [messages, setMessages] = useState(() => {
+    const saved = sessionStorage.getItem('aiChatMessages')
+    return saved ? JSON.parse(saved) : INITIAL_MESSAGES
+  })
   const [input, setInput]       = useState('')
   const [typing, setTyping]     = useState(false)
   const [streamText, setStreamText] = useState('')
   const [fallback, setFallback] = useState(false)
   const endRef = useRef(null)
   const inputRef = useRef(null)
+
+  useEffect(() => {
+    sessionStorage.setItem('aiChatMessages', JSON.stringify(messages))
+  }, [messages])
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -286,6 +293,7 @@ export default function Chat() {
   const handleNewConversation = () => {
     resetChatSession()
     setMessages(INITIAL_MESSAGES)
+    sessionStorage.removeItem('aiChatMessages')
     setInput('')
     setTyping(false)
     setStreamText('')
