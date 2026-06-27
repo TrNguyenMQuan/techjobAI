@@ -1,0 +1,31 @@
+# Web server──
+fastapi>=0.110.0
+uvicorn>=0.28.0
+python-multipart>=0.0.9      # đọc file upload (CV PDF) ở /api/cover-letter
+
+# DB driver (backend dùng psycopg2, KHÔNG phải psycopg3)
+psycopg2-binary>=2.9.0
+sqlalchemy>=1.4.0,<2.0.0     # ai/salary_predictor.py import create_engine ở module top
+
+# Config
+python-dotenv==1.0.1
+
+# Semantic search: embed CÂU QUERY lúc chạy (cùng model với Neon)
+sentence-transformers==3.0.1 # kéo theo torch + transformers
+numpy==1.26.4
+
+# AI Agent (LLM provider chain qua langchain)─
+langchain>=0.3.0
+langchain-groq>=0.3.0
+langchain-openai>=0.3.0      # ChatOpenAI base_url cho OpenRouter/Mistral/Cerebras
+langgraph>=0.4.0
+
+# MCP server (tool cho agent)──
+mcp[cli]>=1.0.0
+
+# Salary prediction: load model .joblib (cần sklearn để unpickle)
+scikit-learn>=1.4.0
+joblib>=1.3.0
+
+# Cover letter: parse PDF CV
+pdfplumber>=0.10.0

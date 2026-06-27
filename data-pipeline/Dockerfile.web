@@ -1,0 +1,33 @@
+FROM python:3.11-slim
+
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH \
+    HF_HOME=/home/user/.cache/huggingface
+
+# WORKDIR = "gốc dự án". be/ai/fe/skills/models là con trực tiếp ở đây.
+WORKDIR /home/user/app
+
+# 1) torch bản CPU trước (tránh ~2GB CUDA vô dụng trên host CPU)
+RUN pip install --no-cache-dir --user torch \
+    --index-url https://download.pytorch.org/whl/cpu
+
+# 2) phần deps còn lại
+COPY --chown=user be/requirement.txt be/requirement.txt
+RUN pip install --no-cache-dir --user -r be/requirement.txt
+
+# 3) bake sẵn model embedding (~80MB) 
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
+
+# 4) copy code app — GIỮ ĐÚNG thế sibling
+COPY --chown=user be/     be/
+COPY --chown=user ai/     ai/
+COPY --chown=user fe/     fe/
+COPY --chown=user skills/ skills/
+COPY --chown=user models/ models/
+
+# 5) chạy. HF mặc định cổng 7860; Render/Railway truyền $PORT
+# KHÔNG copy .env — secret nạp qua env của platform.
+EXPOSE 7860
+CMD uvicorn be.main:app --host 0.0.0.0 --port ${PORT:-7860}
