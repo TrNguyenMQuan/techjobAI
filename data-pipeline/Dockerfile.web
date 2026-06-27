@@ -14,8 +14,8 @@ RUN pip install --no-cache-dir --user torch \
     --index-url https://download.pytorch.org/whl/cpu
 
 # 2) phần deps còn lại
-COPY --chown=user be/requirement.txt be/requirement.txt
-RUN pip install --no-cache-dir --user -r be/requirement.txt
+COPY --chown=user requirements.txt requirements.txt
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # 3) bake sẵn model embedding (~80MB) 
 RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
