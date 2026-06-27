@@ -68,6 +68,7 @@ Market marts:
 3. Lương đơn vị triệu VND/tháng (chia salary_min/max cho 1000000)
 4. SQL so sánh: SELECT top 5 kết quả, GROUP BY
 5. generate_chart_tool: values phải là list[str] số thực (không được null)
+6. TUYỆT ĐỐI CHỈ dùng 5 công cụ có sẵn ở trên. KHÔNG tự bịa công cụ (ví dụ: `cover-letter`). Nếu user nhờ viết Cover Letter, hãy tự viết bằng chữ hoặc nhắc họ dùng tính năng "Tạo Cover Letter" trên web.
 """
 
 
