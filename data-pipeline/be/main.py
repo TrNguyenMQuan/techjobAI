@@ -505,20 +505,26 @@ def semantic_search(
 
     results = []
     if ai_estimate.lower() == 'true':
-        from ai.salary_predictor import predict_hidden_salary
-        for row in rows:
+        from ai.salary_predictor import predict_hidden_salaries
+        jobs_to_predict = []
+        for i, row in enumerate(rows):
             d = dict(row)
-            if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
-                pred = predict_hidden_salary(
-                    title=d.get("title", ""),
-                    city=d.get("primary_city", ""),
-                    level=d.get("job_level_vi", ""),
-                    work_mode=d.get("work_mode", ""),
-                    skills=d.get("skills", "") or ""
-                )
-                if pred:
-                    d["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
             results.append(d)
+            if d.get("salary_min_vnd") is None and d.get("salary_max_vnd") is None:
+                jobs_to_predict.append({
+                    "index": i,
+                    "title": d.get("title", ""),
+                    "city": d.get("primary_city", ""),
+                    "level": d.get("job_level_vi", ""),
+                    "work_mode": d.get("work_mode", ""),
+                    "skills": d.get("skills", "") or ""
+                })
+        
+        if jobs_to_predict:
+            preds = predict_hidden_salaries(jobs_to_predict)
+            for job_req, pred in zip(jobs_to_predict, preds):
+                if pred and "error" not in pred:
+                    results[job_req["index"]]["aiEstimatedSalary"] = pred.get("predicted_max_vnd")
     else:
         results = [dict(row) for row in rows]
 
